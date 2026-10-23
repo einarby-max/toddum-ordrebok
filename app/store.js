@@ -19,13 +19,14 @@ const Store = (() => {
   let app, konto, siteId;
   const listeId = {}, spId = { produkter:{}, kunder:{}, ordre:{} }, kjeder = {};
 
+  function basisUrl(){ return location.origin + location.pathname.replace(/[^/]*$/, ""); }
   function feil(melding, status, kode){ const e = new Error(melding); e.status = status; e.code = kode; return e; }
 
   async function init(){
     const C = window.CONFIG || {};
     if(!C.clientId || C.clientId.startsWith("SETT")) return { tilstand: "ikke-konfigurert" };
     app = new msal.PublicClientApplication({
-      auth: { clientId: C.clientId, authority: `https://login.microsoftonline.com/${C.tenant}`, redirectUri: location.origin + "/" },
+      auth: { clientId: C.clientId, authority: `https://login.microsoftonline.com/${C.tenant}`, redirectUri: basisUrl() },
       cache: { cacheLocation: "localStorage" },
     });
     await app.initialize();
@@ -39,7 +40,7 @@ const Store = (() => {
     return { tilstand: mangler.length ? "oppsett" : "klar", mangler, bruker: { navn: konto.name || konto.username, epost: konto.username } };
   }
   const loggInn = () => app.loginRedirect({ scopes: SCOPES, prompt: "select_account" });
-  const loggUt = () => app.logoutRedirect({ account: konto, postLogoutRedirectUri: location.origin + "/" });
+  const loggUt = () => app.logoutRedirect({ account: konto, postLogoutRedirectUri: basisUrl() });
 
   async function token(){
     try { return (await app.acquireTokenSilent({ scopes: SCOPES, account: konto })).accessToken; }

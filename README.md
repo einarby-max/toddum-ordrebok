@@ -6,7 +6,7 @@ Med ordreboka legger Toddum Gårdsysteri AS inn ukeordre. Fra ordrene lager den 
 - **Ordrebok Kunder**: kunde-ID er nøkkelen, vanligvis kundenummeret.
 - **Ordrebok Ordre**: én rad per kunde per uke. Varelinjene ligger som JSON i kolonnen `linjer`.
 
-Appen er en ren nettside uten server. Den publiseres til Azure Static Web Apps (gratisnivået) hver gang det kommer en endring på `main`.
+Appen er en ren nettside uten server. Den publiseres til GitHub Pages hver gang det kommer en endring på `main`, til adressen `https://einarby-max.github.io/toddum-ordrebok/`. Kodelageret er offentlig. Det inneholder bare kode og det tomme CMR-skjemaet, ingen kunde- eller ordredata.
 
 ## Struktur
 
@@ -18,16 +18,17 @@ Appen er en ren nettside uten server. Den publiseres til Azure Static Web Apps (
 | `app/config.js` | Klient-ID, tenant og SharePoint-område |
 | `app/assets/cmr.pdf` | Tomt CMR-skjema som fylles ut |
 | `app/sw.js`, `app/manifest.webmanifest` | Gjør appen installerbar på telefon |
+| `.github/workflows/pages.yml` | Publiserer mappen `app` til GitHub Pages |
 
 ## Oppsett (gjøres én gang)
 
-1. **Entra.** Opprett appregistreringen «Toddum ordrebok» som Single-page application:
-   - Redirect-URI er `https://<adresse>/`.
+1. **GitHub Pages.** Gå til Settings › Pages og sett Source til «GitHub Actions».
+2. **Entra.** Opprett appregistreringen «Toddum ordrebok» som Single-page application:
+   - Redirect-URI er `https://einarby-max.github.io/toddum-ordrebok/`.
    - Legg til den delegerte Graph-tillatelsen `Sites.Manage.All` og gi administratorsamtykke.
-2. **Konfigurasjon.** Skriv klient-ID-en inn i `app/config.js`.
-3. **Azure.** Opprett en Static Web App på Free-planen med Deployment source «Other». Legg deployment-tokenet inn som GitHub-secret med navnet `AZURE_STATIC_WEB_APPS_API_TOKEN`.
+3. **Konfigurasjon.** Skriv klient-ID-en inn i `app/config.js`.
 4. **Første start.** Åpne appen og logg inn. Oppsettsiden oppretter listene og importerer startdata fra en JSON-eksport.
-5. **Eget domene.** Opprett en CNAME-oppføring `ordre.toddum.com` som peker til Azure-adressen, og legg domenet til i Azure under Custom domains. Legg til `https://ordre.toddum.com/` som ny redirect-URI i Entra.
+5. **Eget domene (valgfritt).** Opprett en CNAME-oppføring `ordre.toddum.com` som peker til `einarby-max.github.io`, og legg domenet inn under Settings › Pages. Legg til `https://ordre.toddum.com/` som redirect-URI i Entra.
 
 ## Bruk på telefon
 
