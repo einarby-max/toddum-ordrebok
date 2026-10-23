@@ -6,7 +6,7 @@ Med ordreboka legger Toddum Gårdsysteri AS inn ukeordre. Fra ordrene lager den 
 - **Ordrebok Kunder**: kunde-ID er nøkkelen, vanligvis kundenummeret.
 - **Ordrebok Ordre**: én rad per kunde per uke. Varelinjene ligger som JSON i kolonnen `linjer`.
 
-Appen er en ren nettside uten server. Den publiseres til GitHub Pages hver gang det kommer en endring på `main`, til adressen `https://einarby-max.github.io/toddum-ordrebok/`. Kodelageret er offentlig. Det inneholder bare kode og det tomme CMR-skjemaet, ingen kunde- eller ordredata.
+Appen er en ren nettside uten server. Den publiseres til GitHub Pages hver gang det kommer en endring på `main`, til adressen `https://ordre.toddum.com/`. Den gamle adressen `https://einarby-max.github.io/toddum-ordrebok/` sender videre dit. Kodelageret er offentlig. Det inneholder bare kode og det tomme CMR-skjemaet, ingen kunde- eller ordredata.
 
 ## Struktur
 
@@ -28,7 +28,7 @@ Appen er en ren nettside uten server. Den publiseres til GitHub Pages hver gang 
    - Legg til den delegerte Graph-tillatelsen `Sites.Manage.All` og gi administratorsamtykke.
 3. **Konfigurasjon.** Skriv klient-ID-en inn i `app/config.js`.
 4. **Første start.** Åpne appen og logg inn. Oppsettsiden oppretter listene og importerer startdata fra en JSON-eksport.
-5. **Eget domene (valgfritt).** Opprett en CNAME-oppføring `ordre.toddum.com` som peker til `einarby-max.github.io`, og legg domenet inn under Settings › Pages. Legg til `https://ordre.toddum.com/` som redirect-URI i Entra.
+5. **Eget domene (gjort 23.10.2026).** CNAME-oppføringen `ordre.toddum.com` peker til `einarby-max.github.io` (DNS hos Dedia). Domenet er lagt inn under Settings › Pages med «Enforce HTTPS», og `https://ordre.toddum.com/` er lagt til som redirect-URI i Entra. Domeneinnstillingen ligger i GitHub, ikke i en CNAME-fil, fordi siden publiseres med GitHub Actions.
 
 ## Bruk på telefon
 
