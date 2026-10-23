@@ -7,7 +7,7 @@ const TRANSPORT_START = [
 const STATUS = [["ny","Ny"],["produsert","Produsert"],["sendt","Sendt"],["fakturert","Fakturert"]];
 const FREKVENS = [["ingen","Ingen fast ordre"],["hver","Hver uke"],["partall","Partallsuker"],["oddetall","Oddetallsuker"]];
 
-const S = { db:null, fase:"start", bruker:null, feil:"", mangler:[], importStatus:"", pdfVindu:null, pollN:0, produkter:[], kunder:[], ordre:[], transport:[], visDP:new Map(), wordImport:null, nyTransport:false, lagret:new Map(), siste:new Map(), kunLes:false, tab:"uke", ukeDato:new Date(), open:new Set(), override:new Map(), loaded:{p:false,k:false,o:false}, kundeSel:null, kundeSok:"", leggTil:"", sugIdx:0, pending:0, unsubOrdre:null, confirmDel:null, nyttProdukt:false };
+const S = { db:null, fase:"start", bruker:null, feil:"", mangler:[], importStatus:"", pdfVindu:null, pollN:0, produkter:[], kunder:[], ordre:[], transport:[], visDP:new Map(), wordImport:null, tEdit:null, utkast:new Map(), lagret:new Map(), siste:new Map(), kunLes:false, tab:"uke", ukeDato:new Date(), open:new Set(), override:new Map(), loaded:{p:false,k:false,o:false}, kundeSel:null, kundeSok:"", leggTil:"", sugIdx:0, pending:0, unsubOrdre:null, confirmDel:null, nyttProdukt:false };
 
 /* ---------- hjelpere ---------- */
 const $ = s => document.querySelector(s);
@@ -136,6 +136,7 @@ function render(){
   $("#weekLbl").innerHTML=`<b>Uke ${u.w}</b><span>${fmtD(m)}–${fmtD(s)}.${s.getFullYear()}</span>`;
   document.querySelectorAll(".tab").forEach(t=>t.setAttribute("aria-selected", String(t.dataset.tab===S.tab)));
   const main=$("#main");
+  taVarePåUtkast();
   main.classList.toggle("ro", !!S.kunLes);
   if(S.fase!=="klar" && S.fase!=="start") main.innerHTML=visFase();
   else if(!(S.loaded.p&&S.loaded.k)) { /* behold lastevisning */ }
@@ -144,10 +145,31 @@ function render(){
   else if(S.tab==="kunder") main.innerHTML=visKunder();
   else if(S.tab==="transport") main.innerHTML=visTransport();
   else main.innerHTML=visProdukter();
+  gjenopprettUtkast();
   if(fid){ const el=document.getElementById(fid); if(el && el!==document.activeElement){ if(fval!=null && el.value!==fval && el.dataset.keep!=="0") el.value=fval; el.focus(); try{ if(fsel) el.setSelectionRange(fsel[0],fsel[1]); }catch(_){} } }
   visSync();
 }
 
+/* Skjemaer merket data-bevar beholder det som er skrevet, men ikke lagret, når siden tegnes på nytt
+   (appen henter nye ordre hvert 20. sekund og tegner da hele siden). */
+function taVarePåUtkast(){
+  document.querySelectorAll("form[data-bevar]").forEach(fm=>{
+    const key=fm.id+"|"+(fm.dataset.id||""), m={};
+    fm.querySelectorAll("input,textarea,select").forEach(el=>{
+      if(!el.id) return;
+      if(el.type==="checkbox"){ if(el.checked!==el.defaultChecked) m[el.id]={c:el.checked}; }
+      else if(el.tagName==="SELECT"){ const def=([...el.options].find(o=>o.defaultSelected)||el.options[0]||{}).value; if(el.value!==def) m[el.id]={v:el.value}; }
+      else if(el.value!==el.defaultValue) m[el.id]={v:el.value};
+    });
+    if(Object.keys(m).length) S.utkast.set(key,m); else S.utkast.delete(key);
+  });
+}
+function gjenopprettUtkast(){
+  document.querySelectorAll("form[data-bevar]").forEach(fm=>{
+    const m=S.utkast.get(fm.id+"|"+(fm.dataset.id||"")); if(!m) return;
+    for(const [id,v] of Object.entries(m)){ const el=document.getElementById(id); if(!el||!fm.contains(el)) continue; if("c" in v) el.checked=v.c; else el.value=v.v; }
+  });
+}
 function ikkeTilkoblet(){ return ""; }
 function visFase(){
   const logo=`<img src="assets/logo.jpg" alt="Toddum Gård Gårdsysteri" class="biglogo">`;
@@ -311,7 +333,7 @@ function visYsteri(){
   <div class="toolbar"><button class="btn primary" data-act="ysteriPdf" ${ordre.length?"":"disabled"}>Last ned PDF</button><button class="btn" data-act="ysteriTekst" ${ordre.length?"":"disabled"}>Kopier som tekst</button></div>
   ${!ordre.length?`<div class="empty"><h3>Ingen varer bestilt i uke ${u.w}</h3>Legg inn ordre under «Ukeordre», så kommer de med her.</div>`:
   `<div class="tablewrap"><table class="grid"><thead><tr><th>Kunde</th>${kol.map(p=>`<th class="n"><span class="chip g-${esc(p.gruppe)}">${esc(p.kort)}</span></th>`).join("")}<th>Kommentar</th></tr></thead>
-  <tbody>${ordre.map(o=>`<tr><td><b>${esc(o.kundeNavn)}</b></td>${kol.map(p=>{const l=(o.linjer||{})[p.varenr]; return `<td class="n">${l&&l.antall?nf(l.antall):""}</td>`;}).join("")}<td class="hint">${esc(kommentar(o))}</td></tr>`).join("")}</tbody>
+  <tbody>${ordre.map(o=>`<tr><td><b>${esc(o.kundeNavn)}</b></td>${kol.map(p=>{const l=(o.linjer||{})[p.varenr]; return `<td class="n">${l&&l.antall?nf(l.antall):""}</td>`;}).join("")}<td class="hint">${esc(kommentarFull(o))}</td></tr>`).join("")}</tbody>
   <tfoot><tr><td>Sum enheter</td>${kol.map(p=>`<td class="n">${nf(sum[p.varenr])}</td>`).join("")}<td></td></tr>
   <tr><td>Detaljistpakninger</td>${kol.map(p=>`<td class="n">${esc(dpTekst(sum[p.varenr],p))}</td>`).join("")}<td></td></tr>
   <tr><td>Kg ost (netto)</td>${kol.map(p=>`<td class="n">${nf(kgNetto(sum[p.varenr],p),1)}</td>`).join("")}<td>Totalt ${nf(totKg,1)} kg</td></tr></tfoot></table></div>`}`;
@@ -331,7 +353,7 @@ function visKunder(){
 function kundeSkjema(k){
   const fi=(f,l,extra="")=>`<label class="f">${l}<input class="txt" id="kf-${f}" data-f="${f}" value="${esc(k[f]||"")}" ${extra}></label>`;
   const fast=Object.entries(k.fast||{}).filter(([,a])=>a>0);
-  return `<form class="form" id="kundeForm" data-id="${esc(k.id)}">
+  return `<form class="form" id="kundeForm" data-id="${esc(k.id)}" data-bevar="1">
     <h3>${esc(k.navn||"Ny kunde")}</h3>
     <h4>Faktura</h4>
     <div class="row">${fi("navn","Navn","required")}${fi("kundenr","Kundenr.")}${fi("orgnr","Org.nr.")}${fi("epost","E-post")}${fi("telefon","Telefon")}</div>
@@ -352,41 +374,45 @@ function kundeSkjema(k){
   </form>`;
 }
 
+function nettLenke(u){ if(!u) return ""; const href=/^https?:\/\//i.test(u)?u:"https://"+u; return `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(u.replace(/^https?:\/\//i,"").replace(/\/$/,""))}</a>`; }
+function transportSkjema(t){
+  const ny=!t.id; const fi=(f,l,extra="")=>`<label class="f">${l}<input class="txt" id="tf-${f}" name="${f}" value="${esc(t[f]||"")}" ${extra}></label>`;
+  return `<form class="card form tform" id="transportForm" data-id="${esc(t.id||"__ny")}" data-bevar="1">
+    <h3>${ny?"Ny transportør":esc(t.navn)}</h3>
+    <div class="row">${fi("navn","Navn","required placeholder='f.eks. Bring Cargo'")}${fi("kontakt","Kontaktperson")}${fi("telefon","Telefon","inputmode='tel'")}${fi("epost","E-post","inputmode='email'")}${fi("nettside","Hjemmeside","inputmode='url' placeholder='f.eks. kristensentransport.no'")}</div>
+    <label class="f">Adresse på CMR<textarea class="txt" id="tf-adresse" name="adresse" rows="2" placeholder="Firmanavn&#10;Gate, postnr. sted (står den tom, brukes bare navnet)">${esc(t.adresse||"")}</textarea></label>
+    <label class="f">Merknad<textarea class="txt" id="tf-merknad" name="merknad" rows="2" placeholder="f.eks. hentetider, ruter, priser">${esc(t.merknad||"")}</textarea></label>
+    <div class="actions"><label class="chk"><input type="checkbox" id="tf-cmr" name="cmr" ${t.cmr?"checked":""}> Krever CMR</label><label class="chk"><input type="checkbox" id="tf-aktiv" name="aktiv" ${t.aktiv!==false?"checked":""}> I bruk</label></div>
+    <div class="actions"><button class="btn primary lagre" type="submit">Lagre</button><button class="btn ghost" type="button" data-act="avbrytTransport">Avbryt</button></div>
+  </form>`;
+}
 function visTransport(){
   const liste=[...S.transport].sort((a,b)=>(b.aktiv!==false)-(a.aktiv!==false)||(a.sort||0)-(b.sort||0)||a.navn.localeCompare(b.navn,"nb"));
   const bruk=n=>S.kunder.filter(k=>k.transport===n&&!k.inaktiv).length;
-  const fi=(t,f,ph="",stil="")=>`<input class="txt" id="tp-${esc(t.id)}-${f}" data-act="tp" data-id="${esc(t.id)}" data-f="${f}" value="${esc(t[f]||"")}" placeholder="${esc(ph)}" ${stil?`style="${stil}"`:""}>`;
-  return `<h2>Transport</h2><p class="sub">Transportørene her kan velges på ordre og kunder. Adressen brukes i feltet for transportør på CMR, og er «Krever CMR» krysset av, foreslås CMR × 3 for alle ordre med denne transportøren. Endringer lagres når du forlater feltet.</p>
-  <div class="toolbar"><button class="btn" data-act="nyTransport">Ny transportør</button></div>
-  ${S.nyTransport?`<form class="card form" id="nyTransportForm" style="margin-bottom:14px"><div class="row">
-    <label class="f">Navn<input class="txt" id="nt-navn" required placeholder="f.eks. Bring Cargo"></label>
-    <label class="f">Kontaktperson<input class="txt" id="nt-kontakt"></label>
-    <label class="f">Telefon<input class="txt" id="nt-telefon" inputmode="tel"></label>
-    <label class="f">E-post<input class="txt" id="nt-epost" inputmode="email"></label></div>
-    <label class="f">Adresse på CMR<textarea class="txt" id="nt-adresse" rows="2" placeholder="Firmanavn&#10;Gate, postnr. sted"></textarea></label>
-    <label class="chk"><input type="checkbox" id="nt-cmr"> Krever CMR</label>
-    <div class="actions"><button class="btn primary" type="submit">Legg til</button><button class="btn ghost" type="button" data-act="avbrytTransport">Avbryt</button></div></form>`:""}
-  <div class="tlist">${liste.map(t=>`<div class="card tcard ${t.aktiv===false?"inaktiv":""}">
-    <div class="row">
-      <label class="f">Navn${fi(t,"navn")}</label>
-      <label class="f">Kontaktperson${fi(t,"kontakt")}</label>
-      <label class="f">Telefon${fi(t,"telefon")}</label>
-      <label class="f">E-post${fi(t,"epost")}</label>
+  const nyT={navn:"",kontakt:"",telefon:"",epost:"",nettside:"",adresse:"",merknad:"",cmr:false,aktiv:true};
+  return `<h2>Transport</h2><p class="sub">Transportørene her kan velges på ordre og kunder. Adressen brukes i feltet for transportør på CMR. Er «Krever CMR» krysset av, foreslås CMR × 3 for alle ordre med denne transportøren.</p>
+  ${S.kunLes?"":`<div class="toolbar"><button class="btn" data-act="nyTransport" ${S.tEdit?"disabled":""}>Ny transportør</button></div>`}
+  ${S.tEdit==="__ny"?transportSkjema(nyT):""}
+  <div class="tlist">${liste.map(t=> S.tEdit===t.id ? transportSkjema(t) : `<div class="card tcard ${t.aktiv===false?"inaktiv":""}">
+    <div class="thead"><div><b class="tnavn">${esc(t.navn)}</b>${t.cmr?` <span class="pill st-ny">CMR</span>`:""}${t.aktiv===false?` <span class="pill st-fakturert">Ikke i bruk</span>`:""}</div>
+      ${S.kunLes?"":`<button class="btn sm" data-act="redigerTransport" data-id="${esc(t.id)}" ${S.tEdit?"disabled":""}>Rediger</button>`}</div>
+    <div class="tinfo">
+      ${[t.kontakt&&`<span>${esc(t.kontakt)}</span>`, t.telefon&&`<a href="tel:${esc(t.telefon.replace(/\s/g,""))}">${esc(t.telefon)}</a>`, t.epost&&`<a href="mailto:${esc(t.epost)}">${esc(t.epost)}</a>`, t.nettside&&nettLenke(t.nettside)].filter(Boolean).join(" · ")||`<span class="hint">Ingen kontaktinformasjon</span>`}
     </div>
-    <label class="f">Adresse på CMR<textarea class="txt" rows="2" id="tp-${esc(t.id)}-adresse" data-act="tp" data-id="${esc(t.id)}" data-f="adresse" placeholder="Står tom: bare navnet brukes på CMR">${esc(t.adresse||"")}</textarea></label>
-    <div class="actions">
-      <label class="chk"><input type="checkbox" id="tp-${esc(t.id)}-cmr" data-act="tp" data-id="${esc(t.id)}" data-f="cmr" ${t.cmr?"checked":""}> Krever CMR</label>
-      <label class="chk"><input type="checkbox" id="tp-${esc(t.id)}-aktiv" data-act="tp" data-id="${esc(t.id)}" data-f="aktiv" ${t.aktiv!==false?"checked":""}> I bruk</label>
-      <span class="sp"></span><span class="hint">${bruk(t.navn)} kunder har denne som fast transport</span>
-    </div></div>`).join("")}</div>`;
+    ${t.adresse?`<div class="hint">CMR: ${esc(t.adresse).replace(/\n/g,", ")}</div>`:""}
+    ${t.merknad?`<div class="hint">${esc(t.merknad)}</div>`:""}
+    <div class="hint">${bruk(t.navn)} kunder har denne som fast transport</div>
+  </div>`).join("")}</div>`;
 }
-function leggTilTransport(){
-  const g=id=>document.getElementById(id); const navn=g("nt-navn").value.trim();
-  if(!navn){ toast("Skriv navnet på transportøren."); return; }
-  if(S.transport.some(x=>x.navn.toLowerCase()===navn.toLowerCase())){ toast("Det finnes allerede en transportør med dette navnet."); return; }
-  let id=slug(navn)||"transport"; if(S.transport.some(x=>x.id===id)) id+="-"+Math.random().toString(36).slice(2,5);
-  const t={id, navn, kontakt:g("nt-kontakt").value.trim(), telefon:g("nt-telefon").value.trim(), epost:g("nt-epost").value.trim(), adresse:g("nt-adresse").value.trim(), cmr:g("nt-cmr").checked, merknad:"", aktiv:true, sort:S.transport.length};
-  S.nyTransport=false; lagreTransport(t).then(()=>toast(`${navn} er lagt til.`));
+function lagreTransportSkjema(form){
+  const v=n=>(form.elements[n]?.value||"").trim(), c=n=>!!form.elements[n]?.checked;
+  const navn=v("navn"); if(!navn){ toast("Skriv navnet på transportøren."); return; }
+  const gammel=form.dataset.id!=="__ny" ? S.transport.find(x=>x.id===form.dataset.id) : null;
+  if(S.transport.some(x=>x!==gammel && x.navn.toLowerCase()===navn.toLowerCase())){ toast("Det finnes allerede en transportør med dette navnet."); return; }
+  let id=gammel?.id; if(!id){ id=slug(navn)||"transport"; if(S.transport.some(x=>x.id===id)) id+="-"+Math.random().toString(36).slice(2,5); }
+  const t={...(gammel||{sort:S.transport.length}), id, navn, kontakt:v("kontakt"), telefon:v("telefon"), epost:v("epost"), nettside:v("nettside"), adresse:v("adresse"), merknad:v("merknad"), cmr:c("cmr"), aktiv:c("aktiv")};
+  S.tEdit=null; S.utkast.delete("transportForm|"+form.dataset.id);
+  lagreTransport(t).then(()=>toast(`✓ ${navn} er lagret.${gammel&&gammel.navn!==navn?` Kunder og ordre med «${gammel.navn}» beholder det gamle navnet til de endres.`:""}`)).catch(()=>{});
 }
 
 function visProdukter(){
@@ -447,7 +473,7 @@ function bindGlobalt(){
     e.preventDefault();
     if(e.target.id==="kundeForm") lagreKunde(e.target);
     if(e.target.id==="nyttProduktForm") leggTilProdukt();
-    if(e.target.id==="nyTransportForm") leggTilTransport();
+    if(e.target.id==="transportForm") lagreTransportSkjema(e.target);
   });
 }
 function byttUke(dager){ const d=new Date(S.ukeDato); d.setDate(d.getDate()+dager); S.ukeDato=d; S.open.clear(); abonnerUke(); render(); }
@@ -477,8 +503,9 @@ function klikk(e){
   else if(a==="nyKunde"){ S.kundeSel="__ny"; render(); }
   else if(a==="fjernFast"){ const k=kunde(S.kundeSel); if(k){ const n={...k,fast:{},fastFrekvens:"ingen"}; oppdaterKunde(n).then(()=>toast(`Fast ordre for ${k.navn} er fjernet.`)); } }
   else if(a==="nyttProdukt"){ S.nyttProdukt=true; render(); }
-  else if(a==="nyTransport"){ S.nyTransport=true; render(); setTimeout(()=>document.getElementById("nt-navn")?.focus(),30); }
-  else if(a==="avbrytTransport"){ S.nyTransport=false; render(); }
+  else if(a==="nyTransport"){ S.tEdit="__ny"; render(); setTimeout(()=>document.getElementById("tf-navn")?.focus(),30); }
+  else if(a==="redigerTransport"){ S.tEdit=id; render(); setTimeout(()=>document.getElementById("tf-kontakt")?.focus(),30); }
+  else if(a==="avbrytTransport"){ S.utkast.delete("transportForm|"+(S.tEdit||"")); S.tEdit=null; render(); }
   else if(a==="loggInn") Store.loggInn();
   else if(a==="aapneOppsett"){ history.replaceState(null,"",location.pathname+"#oppsett"); S.fase="oppsett"; S.mangler=[]; S.importStatus=""; render(); }
   else if(a==="lastPaNytt") location.reload();
@@ -620,6 +647,7 @@ function lagreKunde(form){
   const k = gammel ? {...gammel} : {fast:{},fastFrekvens:"ingen"};
   form.querySelectorAll("[data-f]").forEach(el=>{ k[el.dataset.f] = el.type==="checkbox" ? el.checked : el.value.trim(); });
   const pr=lesPriser(k.priser); if(pr===null){ toast("Kundepriser skrives som varenr=pris, f.eks. 0032=140; 0001=38."); return; } k.priser=pr;
+  S.utkast.delete("kundeForm|"+(form.dataset.id||""));
   if(!k.navn){ toast("Kunden må ha et navn."); return; }
   if(!gammel){ k.id = k.kundenr || ("k-"+slug(k.navn)+"-"+Math.random().toString(36).slice(2,5)); if(kunde(k.id)){ toast("Det finnes allerede en kunde med dette kundenummeret."); return; } S.kunder=[...S.kunder,k].sort((a,b)=>a.navn.localeCompare(b.navn,"nb")); S.kundeSel=k.id; }
   oppdaterKunde(k).then(()=>toast(`${k.navn} er lagret.`));
@@ -634,7 +662,9 @@ function leggTilProdukt(){
 }
 
 /* ---------- PDF og filer ---------- */
-function forberedVindu(){ try{ S.pdfVindu=window.open("","_blank"); if(S.pdfVindu) S.pdfVindu.document.write("<p style=\"font-family:sans-serif;padding:20px\">Lager PDF …</p>"); }catch(_){ S.pdfVindu=null; } }
+/* PDF-er lastes ned med riktig filnavn (f.eks. «Ysteriliste uke 43 2026.pdf») i stedet for å åpnes i ny fane,
+   der nettleseren ville gitt fila et tilfeldig navn. */
+function forberedVindu(){ S.pdfVindu=null; }
 async function lagre(filename, data){
   const type = filename.endsWith(".pdf") ? "application/pdf" : filename.endsWith(".csv") ? "text/csv;charset=utf-8" : "application/json";
   const blob = data instanceof Blob ? data : new Blob([data],{type});
@@ -647,7 +677,7 @@ async function lagre(filename, data){
 }
 async function asset(sti){ const r=await fetch(sti); if(!r.ok) throw new Error("Fant ikke "+sti); return new Uint8Array(await r.arrayBuffer()); }
 function safe(font, s){ s=String(s??"").replace(/[–—]/g,"-").replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/[​\r]/g,""); let out=""; for(const ch of s){ if(ch==="\n"){out+=ch;continue;} try{ font.encodeText(ch); out+=ch; }catch(_){ out+="?"; } } return out; }
-function wrap(font,size,text,maxW){ const words=String(text).split(/\s+/); const lines=[]; let cur=""; for(const w of words){ const t=cur?cur+" "+w:w; if(font.widthOfTextAtSize(t,size)<=maxW) cur=t; else { if(cur) lines.push(cur); cur=w; while(font.widthOfTextAtSize(cur,size)>maxW && cur.length>1){ let i=cur.length-1; while(i>1 && font.widthOfTextAtSize(cur.slice(0,i),size)>maxW) i--; lines.push(cur.slice(0,i)); cur=cur.slice(i); } } } if(cur) lines.push(cur); return lines.length?lines:[""]; }
+function wrap(font,size,text,maxW){ const words=String(text).split(/[ \t\n]+/); const lines=[]; let cur=""; for(const w of words){ const t=cur?cur+" "+w:w; if(font.widthOfTextAtSize(t,size)<=maxW) cur=t; else { if(cur) lines.push(cur); cur=w; while(font.widthOfTextAtSize(cur,size)>maxW && cur.length>1){ let i=cur.length-1; while(i>1 && font.widthOfTextAtSize(cur.slice(0,i),size)>maxW) i--; lines.push(cur.slice(0,i)); cur=cur.slice(i); } } } if(cur) lines.push(cur); return lines.length?lines:[""]; }
 function filnavn(s){ return s.replace(/[\\/:*?"<>|]/g,"").replace(/\s+/g," ").trim(); }
 
 async function pakkseddel(o){
@@ -725,44 +755,57 @@ async function cmr(o){
   await lagre(filnavn(`CMR ${o.kundeNavn} ${dmy(dato)}.pdf`), new Blob([bytes],{type:"application/pdf"}));
 }
 
+/* Korte kolonneoverskrifter til ysterilista, f.eks. «Mozz. 125 g», «Stracc. spann 5 kg». */
+function kortEtikett(p){ return String(p.kort||p.varenr).replace(/\s*\(.*?\)\s*/g," ").replace(/Mozzarella/i,"Mozz.").replace(/Stracciatella/i,"Stracc.").replace(/Revet cubetti/i,"Revet").replace(/\s+/g," ").trim().replace(/(\d) (g|kg)\b/g,"$1 $2"); }
+function kommentarFull(o){ const k=kunde(o.kundeId); return [o.prodDato?`Prod. ${dmy(o.prodDato)}`:"", o.sendes?`Sendes ${dmy(o.sendes)}`:"", o.transport, o.bestnr?`Best.nr ${o.bestnr}`:"", o.merknad||k?.merknad].filter(Boolean).join(" · "); }
 async function ysteriPdf(){
   const {PDFDocument,StandardFonts,rgb}=PDFLib; const u=uke(); const {ordre,kol,sum}=ysteriData();
   const doc=await PDFDocument.create(); const f=await doc.embedFont(StandardFonts.Helvetica), fb=await doc.embedFont(StandardFonts.HelveticaBold);
-  const W=841.89,H=595.28, M=32; const ink=rgb(0.17,0.16,0.15), grey=rgb(0.45,0.43,0.41), band=rgb(0.95,0.93,0.88);
-  const kundeW=150, komW=200; const cw=Math.max(40,(W-2*M-kundeW-komW)/Math.max(1,kol.length));
-  let page, y;
-  const ny=()=>{ page=doc.addPage([W,H]); const m=mandag(S.ukeDato), s=new Date(m); s.setDate(s.getDate()+6);
-    page.drawText(safe(fb,`Ysteriliste uke ${u.w}`),{x:M,y:H-M-6,size:16,font:fb,color:ink});
-    page.drawText(safe(f,`${fmtD(m)}–${fmtD(s)}.${s.getFullYear()} · skrevet ut ${dmyLang(iDag())}`),{x:M,y:H-M-22,size:9,font:f,color:grey});
-    y=H-M-46;
-    page.drawRectangle({x:M,y:y-22,width:W-2*M,height:30,color:band});
-    page.drawText("Kunde",{x:M+4,y:y-4,size:8,font:fb,color:ink});
-    kol.forEach((p,i)=>{ const lines=wrap(fb,7,p.kort,cw-6).slice(0,3); lines.forEach((ln,j)=>{ const w=fb.widthOfTextAtSize(safe(fb,ln),7); page.drawText(safe(fb,ln),{x:M+kundeW+i*cw+cw-4-w,y:y-1-j*8,size:7,font:fb,color:ink}); }); });
-    page.drawText("Kommentar",{x:M+kundeW+kol.length*cw+6,y:y-4,size:8,font:fb,color:ink});
-    y-=34; };
+  const W=841.89,H=595.28, M=28; const ink=rgb(0.17,0.16,0.15), grey=rgb(0.40,0.38,0.36), band=rgb(0.95,0.93,0.88), stripe=rgb(0.985,0.978,0.96), strek=rgb(0.85,0.84,0.82);
+  const kundeW=165; const cw=Math.min(62,(W-2*M-kundeW)/Math.max(1,kol.length)); const tabW=kundeW+cw*kol.length;
+  const xKol=i=>M+kundeW+i*cw;
+  const høyre=(s,font,size,i,yy)=>{ s=safe(font,s); const w=font.widthOfTextAtSize(s,size); page.drawText(s,{x:xKol(i)+cw-5-w,y:yy,size,font,color:ink}); };
+  let page, y, sideNr=0; const m=mandag(S.ukeDato), sø=new Date(m); sø.setDate(sø.getDate()+6);
+  const ny=()=>{ page=doc.addPage([W,H]); sideNr++;
+    page.drawText(safe(fb,`Ysteriliste uke ${u.w}`),{x:M,y:H-M-8,size:17,font:fb,color:ink});
+    page.drawText(safe(f,`${fmtD(m)}–${fmtD(sø)}.${sø.getFullYear()} · ${ordre.length} ordre · skrevet ut ${dmyLang(iDag())}`),{x:M,y:H-M-24,size:9,font:f,color:grey});
+    y=H-M-40;
+    const etik=kol.map(p=>wrap(fb,7.5,safe(fb,kortEtikett(p)),cw-8));
+    const hh=Math.max(...etik.map(e=>e.length),1)*9+10;
+    page.drawRectangle({x:M,y:y-hh,width:tabW,height:hh,color:band});
+    page.drawText("Kunde",{x:M+5,y:y-13,size:8.5,font:fb,color:ink});
+    etik.forEach((ln,i)=>ln.forEach((t,j)=>{ const w=fb.widthOfTextAtSize(t,7.5); page.drawText(t,{x:xKol(i)+cw-5-w,y:y-12-j*9,size:7.5,font:fb,color:ink}); }));
+    y-=hh+14; };
   ny();
-  const rad=(navn,vals,kom,bold=false)=>{
-    const fn=bold?fb:f; const komL=wrap(f,7.5,safe(f,kom||""),komW-10).slice(0,3); const nL=wrap(fn,9,safe(fn,navn),kundeW-8).slice(0,2);
-    const h=Math.max(16, 10*Math.max(komL.length,nL.length)+6);
-    if(y-h<M+10) ny();
-    nL.forEach((l,j)=>page.drawText(l,{x:M+4,y:y-j*10,size:9,font:fn,color:ink}));
-    vals.forEach((v,i)=>{ if(!v) return; const s=safe(fn,v); const w=fn.widthOfTextAtSize(s,10); page.drawText(s,{x:M+kundeW+i*cw+cw-4-w,y,size:10,font:fn,color:ink}); });
-    komL.forEach((l,j)=>page.drawText(l,{x:M+kundeW+kol.length*cw+6,y:y-j*9,size:7.5,font:f,color:grey}));
-    y-=h; page.drawLine({start:{x:M,y:y+10},end:{x:W-M,y:y+10},thickness:0.4,color:rgb(0.85,0.84,0.82)});
-  };
-  ordre.forEach(o=>rad(o.kundeNavn, kol.map(p=>{const l=(o.linjer||{})[p.varenr]; return l&&l.antall?nf(l.antall):"";}), kommentar(o)));
-  y-=4;
-  rad("Sum enheter", kol.map(p=>nf(sum[p.varenr])), "", true);
-  rad("Detaljistpakninger", kol.map(p=>dpTekst(sum[p.varenr],p)), "", true);
+  ordre.forEach((o,ri)=>{
+    const nL=wrap(f,9.5,safe(f,o.kundeNavn),kundeW-10).slice(0,2);
+    const kom=kommentarFull(o); const kL=kom?wrap(f,8,safe(f,kom),tabW-24):[];
+    const h=nL.length*11+kL.length*10+8;
+    if(y-h<M+24) ny();
+    if(ri%2===1) page.drawRectangle({x:M,y:y-h+11,width:tabW,height:h,color:stripe});
+    nL.forEach((t,j)=>page.drawText(t,{x:M+5,y:y-j*11,size:9.5,font:f,color:ink}));
+    kol.forEach((p,i)=>{ const l=(o.linjer||{})[p.varenr]; if(l&&l.antall) høyre(nf(l.antall),fb,10.5,i,y); });
+    kL.forEach((t,j)=>page.drawText(t,{x:M+14,y:y-nL.length*11-j*10,size:8,font:f,color:grey}));
+    y-=h; page.drawLine({start:{x:M,y:y+11},end:{x:M+tabW,y:y+11},thickness:0.4,color:strek});
+  });
+  /* Summer */
   const tot=kol.reduce((s,p)=>s+kgNetto(sum[p.varenr],p),0);
-  rad("Kg ost (netto)", kol.map(p=>nf(kgNetto(sum[p.varenr],p),1)), `Totalt ${nf(tot,1)} kg`, true);
+  const dpL=kol.map(p=>{ if(!(p.perDP>2)) return []; const dp=Math.floor(sum[p.varenr]/p.perDP), r=sum[p.varenr]%p.perDP; return [dp?`${dp} DP`:"", r?`+ ${nf(r)}`:""].filter(Boolean); });
+  const dpH=Math.max(1,...dpL.map(d=>d.length))*10;
+  if(y-(16+dpH+16+20)<M+24) ny();
+  y-=4; page.drawLine({start:{x:M,y:y+12},end:{x:M+tabW,y:y+12},thickness:1,color:ink});
+  page.drawText("Sum enheter",{x:M+5,y,size:9.5,font:fb,color:ink}); kol.forEach((p,i)=>høyre(nf(sum[p.varenr]),fb,10.5,i,y)); y-=16;
+  page.drawText("Detaljistpakninger (DP)",{x:M+5,y,size:9.5,font:fb,color:ink}); dpL.forEach((d,i)=>d.forEach((t,j)=>høyre(t,f,8.5,i,y-j*10))); y-=dpH+6;
+  page.drawText("Kg ost (netto)",{x:M+5,y,size:9.5,font:fb,color:ink}); kol.forEach((p,i)=>høyre(nf(kgNetto(sum[p.varenr],p),1),f,9,i,y)); y-=18;
+  page.drawText(safe(fb,`Totalt ${nf(tot,1)} kg ost (netto)`),{x:M+5,y,size:10,font:fb,color:ink});
+  const sider=doc.getPages(); sider.forEach((pg,i)=>{ const t=`Side ${i+1} av ${sider.length} · Ysteriliste uke ${u.w}`; pg.drawText(t,{x:W-M-f.widthOfTextAtSize(t,7.5),y:M-8,size:7.5,font:f,color:grey}); });
   const bytes=await doc.save();
-  await lagre(`Ysteriliste uke ${u.w}.pdf`, new Blob([bytes],{type:"application/pdf"}));
+  await lagre(`Ysteriliste uke ${u.w} ${u.y}.pdf`, new Blob([bytes],{type:"application/pdf"}));
 }
 function ysteriTekst(){
   const u=uke(), {ordre,kol,sum}=ysteriData();
   let t=`YSTERILISTE UKE ${u.w}\n\nSUM\n`+kol.map(p=>`${p.kort}: ${sum[p.varenr]}${dpTekst(sum[p.varenr],p)?` (${dpTekst(sum[p.varenr],p)})`:""}`).join("\n");
-  t+="\n\nPER KUNDE\n"+ordre.map(o=>`${o.kundeNavn}: `+linjer(o).map(l=>`${l.antall} ${l.p?.kort||l.varenr}`).join(", ")+(kommentar(o)?`\n  ${kommentar(o)}`:"")).join("\n");
+  t+="\n\nPER KUNDE\n"+ordre.map(o=>`${o.kundeNavn}: `+linjer(o).map(l=>`${l.antall} ${l.p?.kort||l.varenr}`).join(", ")+(kommentarFull(o)?`\n  ${kommentarFull(o)}`:"")).join("\n");
   const ok=()=>toast("Ysterilista er kopiert. Lim den inn i SMS eller e-post.");
   try{ navigator.clipboard.writeText(t).then(ok,()=>fallbackKopi(t)); }catch(_){ fallbackKopi(t); }
 }

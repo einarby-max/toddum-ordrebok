@@ -12,7 +12,7 @@ const Store = (() => {
       ["kontakt",T],["kontaktEpost",T],["kontaktTlf",T],["levNavn",T],["levAdresse",M],["transport",T],["cmr",B],["leveringsdag",T],
       ["merknad",M],["instruks",M],["fastFrekvens",T],["fast",J],["inaktiv",B],["priser",J],["antallI",T] ] },
     transport: { navn: "Ordrebok Transport", nokkel: "id", valgfri: true, kol: [
-      ["navn",T],["adresse",M],["kontakt",T],["telefon",T],["epost",T],["cmr",B],["merknad",M],["aktiv",B],["sort",N] ] },
+      ["navn",T],["adresse",M],["kontakt",T],["telefon",T],["epost",T],["cmr",B],["merknad",M],["aktiv",B],["sort",N],["nettside",T] ] },
     ordre: { navn: "Ordrebok Ordre", nokkel: "id", kol: [
       ["uke",T,{indexed:true}],["kundeId",T],["kundeNavn",T],["linjer",J],["transport",T],["sendes",T],["prodDato",T],["bestnr",T],
       ["merknad",M],["status",T],["kilde",T],["opprettet",T],["endret",T] ] },
