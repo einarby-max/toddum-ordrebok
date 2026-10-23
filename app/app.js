@@ -129,7 +129,10 @@ function visFase(){
       <input type="file" id="importFil" accept=".json,application/json" ${S.mangler.length?"disabled":""}>
       ${S.importStatus?`<p class="notice">${esc(S.importStatus)}</p>`:""}
       <h4>3. Ferdig</h4>
-      <div class="actions"><button class="btn primary" data-act="ferdigOppsett" ${S.mangler.length?"disabled":""}>Åpne ordreboka</button><button class="btn" data-act="eksporter" ${S.mangler.length?"disabled":""}>Last ned sikkerhetskopi (JSON)</button></div></div>`;
+      <div class="actions"><button class="btn primary" data-act="ferdigOppsett" ${S.mangler.length?"disabled":""}>Åpne ordreboka</button><button class="btn" data-act="eksporter" ${S.mangler.length?"disabled":""}>Last ned sikkerhetskopi (JSON)</button></div>
+      <h4>Slett alle ordre</h4>
+      <p class="hint">Sletter alle ordre i alle uker. Kunder og produkter beholdes. Last ned en sikkerhetskopi først, og skriv SLETT i feltet for å bekrefte.</p>
+      <div class="actions"><input class="txt" id="slettBekreft" placeholder="Skriv SLETT" style="max-width:160px" autocomplete="off"><button class="btn danger" data-act="slettAlle" ${S.backupTatt?"":"disabled"}>Slett alle ordre</button></div></div>`;
   }
   return "";
 }
@@ -152,12 +155,14 @@ function visUke(){
       ${sug.length?`<div class="suggest">${sug.map((k,i)=>`<button data-act="nyOrdre" data-id="${esc(k.id)}" class="${i===S.sugIdx?"act":""}"><span>${esc(k.navn)}</span><small>${esc(k.poststed||"")}</small></button>`).join("")}</div>`:""}
     </div>
     <button class="btn" data-act="hentFaste" ${faste.length?"":"disabled"} title="${faste.map(k=>esc(k.navn)).join(", ")}">Hent faste ordre${faste.length?` (${faste.length})`:""}</button>
+    <button class="btn" data-act="kopierForrige" title="Lager ordre for kundene fra forrige uke med samme varer og antall. Kunder som allerede har ordre denne uka, hoppes over.">Kopier forrige uke</button>
     <button class="btn" data-act="csv" ${ordre.length?"":"disabled"}>Fakturagrunnlag (CSV)</button>
+    <button class="btn danger ghost" data-act="tomUke" ${ordre.length?"":"disabled"}>${S.confirmTom?`Trykk igjen for å slette ${ordre.length} ordre`:"Tøm uka"}</button>
   </div>
   <div class="stats"><span><b>${ordre.length}</b> ordre</span><span><b>${nf(totStk)}</b> enheter</span><span><b>${nf(totKg,1)}</b> kg ost (netto)</span><span>${STATUS.map(([k,l])=>`${l}: <b>${ordre.filter(o=>(o.status||"ny")===k).length}</b>`).join(" · ")}</span></div>
   ${!S.loaded.o?`<div class="empty"><h3>Henter ordre for uke ${u.w} …</h3></div>`:
     ordre.length? `<div class="orders">${ordre.map(visOrdre).join("")}</div>` :
-    `<div class="empty"><h3>Ingen ordre i uke ${u.w} ennå</h3>Skriv et kundenavn i feltet over for å legge inn første ordre${faste.length?`, eller trykk «Hent faste ordre» for å legge inn ${faste.length} faste ordre på én gang`:""}.</div>`}`;
+    `<div class="empty"><h3>Ingen ordre i uke ${u.w} ennå</h3>Skriv et kundenavn i feltet over for å legge inn første ordre${faste.length?`, eller trykk «Hent faste ordre» for å legge inn ${faste.length} faste ordre på én gang`:""}. Med «Kopier forrige uke» henter du alle ordrene fra uka før og justerer bare antallet.</div>`}`;
 }
 
 function visOrdre(o){
@@ -270,7 +275,7 @@ function kundeSkjema(k){
 function visProdukter(){
   const ps=prodAlle();
   return `${ikkeTilkoblet()}<h2>Produkter</h2><p class="sub">Hentet fra EPD-eksporten. Vekt per detaljistpakning (DP) brukes til bruttovekt på CMR, nettovekt til kg-summen i ysterilista. Endringer lagres når du forlater feltet.</p>
-  <div class="toolbar"><button class="btn" data-act="nyttProdukt">Nytt produkt</button></div>
+  <div class="toolbar"><button class="btn" data-act="nyttProdukt">Nytt produkt</button><span class="sp" style="flex:1"></span><button class="btn ghost" data-act="aapneOppsett">Oppsett, sikkerhetskopi og sletting</button></div>
   ${S.nyttProdukt?`<form class="card form" id="nyttProduktForm" style="margin-bottom:14px"><div class="row">
     <label class="f">Varenr.<input class="txt" id="np-varenr" required placeholder="f.eks. 0040"></label>
     <label class="f">Kort navn<input class="txt" id="np-kort" required placeholder="Stracciatella 1 kg"></label>
@@ -331,6 +336,9 @@ function klikk(e){
   if(a==="toggle"){ if(e.target.closest("select,input,button:not([data-act=toggle])")) return; S.open.has(id)?S.open.delete(id):S.open.add(id); S.confirmDel=null; render(); }
   else if(a==="nyOrdre") nyOrdre(id);
   else if(a==="hentFaste") hentFaste();
+  else if(a==="kopierForrige"){ el.disabled=true; kopierForrige().finally(()=>{ el.disabled=false; }); }
+  else if(a==="tomUke"){ if(S.confirmTom){ S.confirmTom=false; tomUke(); } else { S.confirmTom=true; render(); setTimeout(()=>{ if(S.confirmTom){ S.confirmTom=false; render(); } },5000); } }
+  else if(a==="slettAlle") slettAlle();
   else if(a==="csv") lastNedCSV();
   else if(a==="pakkseddel"){ forberedVindu(); pakkseddel(finnOrdre(id)); }
   else if(a==="cmr"){ forberedVindu(); cmr(finnOrdre(id)); }
@@ -343,10 +351,11 @@ function klikk(e){
   else if(a==="fjernFast"){ const k=kunde(S.kundeSel); if(k){ const n={...k,fast:{},fastFrekvens:"ingen"}; oppdaterKunde(n).then(()=>toast(`Fast ordre for ${k.navn} er fjernet.`)); } }
   else if(a==="nyttProdukt"){ S.nyttProdukt=true; render(); }
   else if(a==="loggInn") Store.loggInn();
+  else if(a==="aapneOppsett"){ history.replaceState(null,"",location.pathname+"#oppsett"); S.fase="oppsett"; S.mangler=[]; S.importStatus=""; render(); }
   else if(a==="lastPaNytt") location.reload();
   else if(a==="opprettLister"){ el.disabled=true; el.textContent="Oppretter …"; Store.opprettLister().then(()=>{ S.mangler=[]; render(); toast("Listene er opprettet i SharePoint."); }).catch(e=>{ toast("Klarte ikke å opprette listene: "+(e.message||e)); render(); }); }
   else if(a==="ferdigOppsett"){ history.replaceState(null,"",location.pathname); lastAlt(); }
-  else if(a==="eksporter"){ Store.eksporter().then(d=>lagre(`Ordrebok sikkerhetskopi ${iDag()}.json`, JSON.stringify(d,null,1))).catch(e=>toast(errMsg(e))); }
+  else if(a==="eksporter"){ Store.eksporter().then(d=>{ S.backupTatt=true; render(); return lagre(`Ordrebok sikkerhetskopi ${iDag()}.json`, JSON.stringify(d,null,1)); }).catch(e=>toast(errMsg(e))); }
   else if(a==="avbrytProdukt"){ S.nyttProdukt=false; render(); }
 }
 const finnOrdre = id => S.ordre.find(o=>o.id===id);
@@ -407,6 +416,39 @@ function hentFaste(){
     lagreOrdre({id, uke:u.key, kundeId:k.id, kundeNavn:k.navn, linjer:lin, transport:k.transport||"", sendes:"", prodDato:"", bestnr:"", merknad:"", status:"ny", kilde:"fast", opprettet:new Date().toISOString()});
   });
   toast(`${faste.length} faste ordre er lagt inn for uke ${u.w}.`);
+}
+async function kopierForrige(){
+  const u=uke(); const d=new Date(mandag(S.ukeDato)); d.setDate(d.getDate()-7); const forrige=isoUke(d);
+  let liste;
+  try{ liste=await Store.hent("ordre",forrige.key); }catch(e){ toast(errMsg(e)); return; }
+  const har=new Set(S.ordre.map(o=>o.kundeId));
+  const kandidater=liste.filter(o=>linjer(o).length && !har.has(o.kundeId));
+  if(!liste.length){ toast(`Fant ingen ordre i uke ${forrige.w}.`); return; }
+  if(!kandidater.length){ toast(`Alle kundene fra uke ${forrige.w} har allerede ordre denne uka.`); return; }
+  for(const o of kandidater){
+    const lin={}; linjer(o).forEach(l=>{ lin[l.varenr]={antall:l.antall}; });
+    const id=`${u.key}-${slug(o.kundeNavn||"kunde")||"kunde"}-${Math.random().toString(36).slice(2,6)}`;
+    lagreOrdre({id, uke:u.key, kundeId:o.kundeId, kundeNavn:o.kundeNavn, linjer:lin, transport:o.transport||"", sendes:"", prodDato:"", bestnr:"", merknad:o.merknad||"", status:"ny", kilde:"kopi", opprettet:new Date().toISOString()});
+  }
+  const hoppet=liste.filter(o=>har.has(o.kundeId)).length;
+  toast(`${kandidater.length} ordre er kopiert fra uke ${forrige.w}${hoppet?`. ${hoppet} kunder hadde allerede ordre og ble hoppet over`:""}. Husk å sjekke antallene.`);
+}
+function tomUke(){
+  const u=uke(); const ids=S.ordre.map(o=>o.id); if(!ids.length) return;
+  const sl=(S.slettet=S.slettet||new Set()); ids.forEach(id=>{ sl.add(id); S.override.delete(id); });
+  S.ordre=[]; render();
+  Promise.all(ids.map(id=>skriv("ordre/"+id,null).catch(()=>null))).then(()=>toast(`Uke ${u.w} er tømt. ${ids.length} ordre er slettet.`));
+}
+async function slettAlle(){
+  const felt=document.getElementById("slettBekreft");
+  if(!S.backupTatt){ toast("Last ned en sikkerhetskopi først."); return; }
+  if(!felt || felt.value.trim()!=="SLETT"){ toast("Skriv SLETT i feltet for å bekrefte."); return; }
+  try{
+    const alle=await Store.hent("ordre"); let n=0;
+    S.importStatus=`Sletter ${alle.length} ordre …`; render();
+    for(const o of alle){ await Store.slett("ordre",o.id); n++; if(n%10===0){ S.importStatus=`Sletter … ${n} av ${alle.length}`; planRender(); } }
+    S.ordre=[]; S.importStatus=`Alle ordre er slettet (${n}). Kunder og produkter er beholdt.`; render();
+  }catch(e){ S.importStatus="Slettingen stoppet: "+(e.message||e); render(); }
 }
 function somFast(o){
   const k=kunde(o.kundeId); if(!k) return; const fr=document.getElementById("ff-"+o.id)?.value||"hver";
