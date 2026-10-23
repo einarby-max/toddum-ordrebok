@@ -1,0 +1,3 @@
+*.json.bak
+eksport/
+node_modules/

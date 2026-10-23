@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="nb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Toddum ordrebok</title>
+<meta name="theme-color" content="#2D5A45">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Ordrebok">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Young+Serif&family=Public+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+img{max-width:100%}
+[hidden]{display:none!important}
+
+/* Layout: sticky toppstripe med uke og faner, deretter én kolonne med ordrekort; ark-lignende flater på kremhvit grunn */
+:root{
+  --bg:#FAF8F2; --surface:#FFFFFF; --sunk:#F2EDE0; --line:#E3DDD0; --fg:#2B2A28; --muted:#6E6862;
+  --accent:#2D5A45; --accent-fg:#FFFFFF; --sage:#7A8C74; --focus:#6BAF7A;
+  --ok:#2F7A4D; --warn:#A66A12; --info:#2E5E86; --danger:#A23B2C;
+  --p-125g:#C8DCE8; --p-10g:#C8E5C3; --p-burrata:#2D5A45; --p-burrata-fg:#FFFFFF; --p-strac:#D9E7DF; --p-revet:#F5EAB0; --p-fg:#2B2A28;
+  --f-display:"Young Serif", "Georgia", serif;
+  --f-body:"Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#171C19; --surface:#1F2622; --sunk:#141815; --line:#323B35; --fg:#ECE8DF; --muted:#A39D94;
+  --accent:#8CC39C; --accent-fg:#10261A; --sage:#9DB596; --focus:#8CC39C;
+  --ok:#7CC796; --warn:#E0A955; --info:#8DB8DE; --danger:#E8836F;
+  --p-125g:#2E4552; --p-10g:#2F4A33; --p-burrata:#0F2A1D; --p-burrata-fg:#DDEFE3; --p-strac:#2B3D33; --p-revet:#4D4521; --p-fg:#ECE8DF;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#171C19; --surface:#1F2622; --sunk:#141815; --line:#323B35; --fg:#ECE8DF; --muted:#A39D94;
+  --accent:#8CC39C; --accent-fg:#10261A; --sage:#9DB596; --focus:#8CC39C;
+  --ok:#7CC796; --warn:#E0A955; --info:#8DB8DE; --danger:#E8836F;
+  --p-125g:#2E4552; --p-10g:#2F4A33; --p-burrata:#0F2A1D; --p-burrata-fg:#DDEFE3; --p-strac:#2B3D33; --p-revet:#4D4521; --p-fg:#ECE8DF;
+  color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.45;margin:0}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.wrap{max-width:1080px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+.toprow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-block:10px}
+.brand{font-family:var(--f-display);font-size:22px;color:var(--sage);letter-spacing:.2px;margin-right:auto;white-space:nowrap}
+.brand small{font-family:var(--f-body);font-size:12px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-left:6px}
+.weeknav{display:flex;align-items:center;gap:4px}
+.weeknav .lbl{min-width:150px;text-align:center;font-variant-numeric:tabular-nums}
+.weeknav .lbl b{font-family:var(--f-display);font-weight:400;font-size:18px;display:block;line-height:1.1}
+.weeknav .lbl span{font-size:12px;color:var(--muted)}
+.tabs{display:flex;gap:2px;overflow-x:auto;padding-bottom:0}
+.tab{border:0;background:none;padding:10px 14px;border-bottom:3px solid transparent;color:var(--muted);cursor:pointer;font-weight:600;white-space:nowrap}
+.tab[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--accent)}
+.sync{font-size:12px;color:var(--muted);display:flex;flex-direction:column;align-items:flex-end;gap:2px;text-align:right}
+.sync .who{white-space:nowrap}
+@media (max-width:560px){.sync{flex-direction:row;justify-content:space-between;width:100%;align-items:center}}
+.linkbtn{border:0;background:none;padding:0;color:var(--accent);text-decoration:underline;cursor:pointer;font-size:12px}
+.center{max-width:520px;margin:40px auto;text-align:center;display:flex;flex-direction:column;align-items:center;gap:6px}
+.biglogo{width:140px;height:140px;border-radius:16px;margin-bottom:6px}
+code{background:var(--sunk);padding:1px 5px;border-radius:4px}
+main{padding-block:18px 60px}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:7px 12px;cursor:pointer;font-weight:600;font-size:14px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn:hover{border-color:var(--sage)}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.btn.ghost{border-color:transparent;background:none}
+.btn.danger{color:var(--danger)}
+.btn.sm{padding:4px 9px;font-size:13px}
+.btn[disabled]{opacity:.45;cursor:default}
+.iconbtn{border:1px solid var(--line);background:var(--surface);border-radius:8px;width:34px;height:34px;cursor:pointer;font-size:18px;line-height:1}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+.toolbar .grow{flex:1 1 260px;min-width:0;position:relative}
+input.txt,select.txt,textarea.txt{width:100%;border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:7px 10px;min-width:0}
+textarea.txt{resize:vertical;min-height:60px}
+label.f{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.02em;min-width:0}
+label.f > *{font-weight:400;font-size:14px;color:var(--fg);letter-spacing:0}
+label.chk{display:flex;align-items:center;gap:8px;font-size:14px}
+.suggest{position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgb(0 0 0/.12);max-height:320px;overflow:auto;z-index:6}
+.suggest button{display:flex;justify-content:space-between;gap:10px;width:100%;text-align:left;border:0;background:none;padding:8px 12px;cursor:pointer}
+.suggest button:hover,.suggest button.act{background:var(--sunk)}
+.suggest small{color:var(--muted)}
+.stats{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin:-4px 0 14px}
+.stats b{color:var(--fg);font-variant-numeric:tabular-nums}
+.orders{display:flex;flex-direction:column;gap:10px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px}
+.ohead{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;flex-wrap:wrap}
+.ohead .name{font-weight:700;font-size:16px;margin-right:auto;min-width:0}
+.ohead .name small{display:block;font-weight:400;font-size:13px;color:var(--muted)}
+.summary{display:flex;gap:6px;flex-wrap:wrap;padding:0 14px 12px;margin-top:-4px}
+.chip{font-size:12.5px;border-radius:999px;padding:2px 9px;background:var(--sunk);color:var(--p-fg);font-variant-numeric:tabular-nums;white-space:nowrap}
+.g-125g{background:var(--p-125g)} .g-10g{background:var(--p-10g)} .g-Burrata{background:var(--p-burrata);color:var(--p-burrata-fg)} .g-Stracciatella{background:var(--p-strac)} .g-Revet{background:var(--p-revet)}
+.pill{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border-radius:6px;padding:3px 8px;border:1px solid currentColor}
+.st-ny{color:var(--info)} .st-produsert{color:var(--warn)} .st-sendt{color:var(--ok)} .st-fakturert{color:var(--muted)}
+.obody{border-top:1px solid var(--line);padding:14px;display:grid;gap:16px}
+.lines{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
+.line{display:grid;grid-template-columns:1fr 64px;gap:4px 8px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:6px 8px 6px 10px;border-left-width:5px}
+.line.has{background:var(--sunk)}
+.line .pn{font-size:13.5px;min-width:0}
+.line .pn small{display:block;color:var(--muted);font-size:11.5px}
+.line input{width:64px;text-align:right;border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:5px 6px;font-variant-numeric:tabular-nums}
+.line .bt{grid-column:1/-1;display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted)}
+.line .bt input{width:96px;text-align:left;font-size:12px;padding:3px 6px}
+.bl-125g{border-left-color:var(--p-125g)} .bl-10g{border-left-color:var(--p-10g)} .bl-Burrata{border-left-color:var(--p-burrata)} .bl-Stracciatella{border-left-color:var(--p-strac)} .bl-Revet{border-left-color:var(--p-revet)}
+.meta{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.meta .wide{grid-column:1/-1}
+.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.actions .sp{flex:1}
+.hint{font-size:12.5px;color:var(--muted)}
+.empty{border:1px dashed var(--line);border-radius:10px;padding:28px;text-align:center;color:var(--muted)}
+.empty h3{font-family:var(--f-display);font-weight:400;color:var(--fg);margin:0 0 6px;font-size:20px}
+h2{font-family:var(--f-display);font-weight:400;font-size:24px;margin:0 0 4px;text-wrap:balance}
+.sub{color:var(--muted);margin:0 0 16px;font-size:14px}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table.grid{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:14px}
+table.grid th,table.grid td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+table.grid th{font-size:12px;color:var(--muted);font-weight:700;background:var(--sunk);position:sticky;top:0}
+table.grid td.n,table.grid th.n{text-align:right}
+table.grid tfoot td{font-weight:700;background:var(--sunk)}
+table.grid tr.sel td{background:var(--sunk)}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:16px;align-items:start}
+@media (max-width:760px){.two{grid-template-columns:1fr}.weeknav .lbl{min-width:120px}}
+.klist{max-height:70vh;overflow:auto}
+.klist button{display:flex;justify-content:space-between;gap:8px;width:100%;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;padding:9px 12px;cursor:pointer}
+.klist button.sel{background:var(--sunk)}
+.klist small{color:var(--muted)}
+.form{padding:14px;display:grid;gap:12px}
+.form .row{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+.form h3{font-family:var(--f-display);font-weight:400;font-size:20px;margin:0}
+.form h4{margin:6px 0 0;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:14px;z-index:20;max-width:calc(100% - 32px)}
+.notice{background:var(--sunk);border-radius:10px;padding:12px 14px;font-size:14px;margin-bottom:14px}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="toprow">
+      <div class="brand">Toddum <small>Ordrebok</small></div>
+      <div class="weeknav">
+        <button class="iconbtn" id="prevWeek" aria-label="Forrige uke">‹</button>
+        <div class="lbl" id="weekLbl"><b>Uke –</b><span></span></div>
+        <button class="iconbtn" id="nextWeek" aria-label="Neste uke">›</button>
+        <button class="btn ghost sm" id="thisWeek">I dag</button>
+      </div>
+      <div class="sync" id="sync"></div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" data-tab="uke" id="tab-uke">Ukeordre</button>
+      <button class="tab" role="tab" data-tab="ysteri" id="tab-ysteri">Ysteriliste</button>
+      <button class="tab" role="tab" data-tab="kunder" id="tab-kunder">Kunder</button>
+      <button class="tab" role="tab" data-tab="produkter" id="tab-produkter">Produkter</button>
+    </nav>
+  </div>
+</header>
+<main class="wrap" id="main">
+  <div class="empty"><h3>Starter ordreboka …</h3>Kobler til Microsoft 365.</div>
+</main>
+<div class="toast" id="toast" hidden></div>
+<script src="config.js"></script>
+<script src="vendor/msal-browser.min.js"></script>
+<script src="vendor/pdf-lib.min.js"></script>
+<script src="store.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
