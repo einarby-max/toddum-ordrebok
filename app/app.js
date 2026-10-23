@@ -156,7 +156,7 @@ function visUke(){
     </div>
     <button class="btn" data-act="hentFaste" ${faste.length?"":"disabled"} title="${faste.map(k=>esc(k.navn)).join(", ")}">Hent faste ordre${faste.length?` (${faste.length})`:""}</button>
     <button class="btn" data-act="kopierForrige" title="Lager ordre for kundene fra forrige uke med samme varer og antall. Kunder som allerede har ordre denne uka, hoppes over.">Kopier forrige uke</button>
-    <button class="btn" data-act="csv" ${ordre.length?"":"disabled"}>Fakturagrunnlag (CSV)</button>
+    <button class="btn" data-act="unimicro" ${ordre.length?"":"disabled"} title="Lager en Excel-fil i Unimicros importmal for ordre. Ordre med status Fakturert tas ikke med.">Ordre til Unimicro (Excel)</button>
     <button class="btn danger ghost" data-act="tomUke" ${ordre.length?"":"disabled"}>${S.confirmTom?`Trykk igjen for å slette ${ordre.length} ordre`:"Tøm uka"}</button>
   </div>
   <div class="stats"><span><b>${ordre.length}</b> ordre</span><span><b>${nf(totStk)}</b> enheter</span><span><b>${nf(totKg,1)}</b> kg ost (netto)</span><span>${STATUS.map(([k,l])=>`${l}: <b>${ordre.filter(o=>(o.status||"ny")===k).length}</b>`).join(" · ")}</span></div>
@@ -258,6 +258,7 @@ function kundeSkjema(k){
     <h4>Faktura</h4>
     <div class="row">${fi("navn","Navn","required")}${fi("kundenr","Kundenr.")}${fi("orgnr","Org.nr.")}${fi("epost","E-post")}${fi("telefon","Telefon")}</div>
     <div class="row">${fi("adresse","Adresse")}${fi("adresse2","Adresse 2")}${fi("postnr","Postnr.")}${fi("poststed","Poststed")}</div>
+    <label class="f">Kundepriser eks. mva (avvik fra listepris)<input class="txt" id="kf-priser" data-f="priser" value="${esc(priserTekst(k.priser))}" placeholder="f.eks. 0032=140; 0001=38"></label>
     <h4>Levering</h4>
     <div class="row">${fi("levNavn","Leveres til (navn)","placeholder='Samme som kunde'")}<label class="f">Leveringsadresse<input class="txt" id="kf-levAdresse" data-f="levAdresse" value="${esc(k.levAdresse||"")}" placeholder="Gate, postnr. sted"></label>
       <label class="f">Transport<select class="txt" id="kf-transport" data-f="transport"><option value="">Ikke valgt</option>${TRANSPORT.map(t=>`<option ${k.transport===t?"selected":""}>${esc(t)}</option>`).join("")}</select></label>${fi("leveringsdag","Fast leveringsdag","placeholder='f.eks. tirsdag'")}</div>
@@ -274,21 +275,23 @@ function kundeSkjema(k){
 
 function visProdukter(){
   const ps=prodAlle();
-  return `${ikkeTilkoblet()}<h2>Produkter</h2><p class="sub">Hentet fra EPD-eksporten. Vekt per detaljistpakning (DP) brukes til bruttovekt på CMR, nettovekt til kg-summen i ysterilista. Endringer lagres når du forlater feltet.</p>
+  return `${ikkeTilkoblet()}<h2>Produkter</h2><p class="sub">Hentet fra EPD-eksporten. Vekt per detaljistpakning (DP) brukes til bruttovekt på CMR, nettovekt til kg-summen i ysterilista. Prisen er listepris eks. mva per salgsenhet og brukes i ordrefila til Unimicro. Kundepriser legges på kunden. Endringer lagres når du forlater feltet.</p>
   <div class="toolbar"><button class="btn" data-act="nyttProdukt">Nytt produkt</button><span class="sp" style="flex:1"></span><button class="btn ghost" data-act="aapneOppsett">Oppsett, sikkerhetskopi og sletting</button></div>
   ${S.nyttProdukt?`<form class="card form" id="nyttProduktForm" style="margin-bottom:14px"><div class="row">
     <label class="f">Varenr.<input class="txt" id="np-varenr" required placeholder="f.eks. 0040"></label>
     <label class="f">Kort navn<input class="txt" id="np-kort" required placeholder="Stracciatella 1 kg"></label>
+    <label class="f">Pris eks. mva<input class="txt" id="np-pris" inputmode="decimal"></label>
     <label class="f">Gruppe<select class="txt" id="np-gruppe">${["125g","10g","Burrata","Stracciatella","Revet"].map(g=>`<option>${g}</option>`).join("")}</select></label>
     <label class="f">Pakning (DP)<input class="txt" id="np-pakning" placeholder="2 x 1 kg"></label>
     <label class="f">Enheter per DP<input class="txt" id="np-perDP" inputmode="numeric" value="2"></label>
     <label class="f">Brutto per DP (g)<input class="txt" id="np-dpBruttoG" inputmode="numeric"></label>
     <label class="f">Netto per enhet (g)<input class="txt" id="np-stkNettoG" inputmode="numeric"></label>
   </div><div class="actions"><button class="btn primary" type="submit">Legg til produkt</button><button class="btn ghost" type="button" data-act="avbrytProdukt">Avbryt</button></div></form>`:""}
-  <div class="tablewrap"><table class="grid"><thead><tr><th>Varenr.</th><th>Kort navn</th><th>Gruppe</th><th>Pakning</th><th class="n">Per DP</th><th class="n">Brutto DP (g)</th><th class="n">Netto enhet (g)</th><th>GTIN</th><th>Aktiv</th></tr></thead>
+  <div class="tablewrap"><table class="grid"><thead><tr><th>Varenr.</th><th>Kort navn</th><th class="n">Pris eks. mva</th><th>Gruppe</th><th>Pakning</th><th class="n">Per DP</th><th class="n">Brutto DP (g)</th><th class="n">Netto enhet (g)</th><th>GTIN</th><th>Aktiv</th></tr></thead>
   <tbody>${ps.map(p=>`<tr>
     <td>#${esc(p.varenr)}</td>
     <td><input class="txt" id="pr-${esc(p.varenr)}-kort" data-act="prod" data-v="${esc(p.varenr)}" data-f="kort" value="${esc(p.kort)}" style="min-width:180px"></td>
+    <td class="n"><input class="txt" id="pr-${esc(p.varenr)}-pris" data-act="prod" data-v="${esc(p.varenr)}" data-f="pris" data-num="1" value="${p.pris?esc(String(p.pris).replace(".",",")):""}" placeholder="–" style="width:80px;text-align:right"></td>
     <td><span class="chip g-${esc(p.gruppe)}">${esc(p.gruppe)}</span></td>
     <td><input class="txt" id="pr-${esc(p.varenr)}-pakning" data-act="prod" data-v="${esc(p.varenr)}" data-f="pakning" value="${esc(p.pakning)}" style="width:110px"></td>
     <td class="n"><input class="txt" id="pr-${esc(p.varenr)}-perDP" data-act="prod" data-v="${esc(p.varenr)}" data-f="perDP" data-num="1" value="${esc(p.perDP)}" style="width:60px;text-align:right"></td>
@@ -340,6 +343,7 @@ function klikk(e){
   else if(a==="tomUke"){ if(S.confirmTom){ S.confirmTom=false; tomUke(); } else { S.confirmTom=true; render(); setTimeout(()=>{ if(S.confirmTom){ S.confirmTom=false; render(); } },5000); } }
   else if(a==="slettAlle") slettAlle();
   else if(a==="csv") lastNedCSV();
+  else if(a==="unimicro") lastNedUnimicro();
   else if(a==="pakkseddel"){ forberedVindu(); pakkseddel(finnOrdre(id)); }
   else if(a==="cmr"){ forberedVindu(); cmr(finnOrdre(id)); }
   else if(a==="somFast") somFast(finnOrdre(id));
@@ -460,6 +464,7 @@ function lagreKunde(form){
   const gammel = form.dataset.id ? kunde(form.dataset.id) : null;
   const k = gammel ? {...gammel} : {fast:{},fastFrekvens:"ingen"};
   form.querySelectorAll("[data-f]").forEach(el=>{ k[el.dataset.f] = el.type==="checkbox" ? el.checked : el.value.trim(); });
+  const pr=lesPriser(k.priser); if(pr===null){ toast("Kundepriser skrives som varenr=pris, f.eks. 0032=140; 0001=38."); return; } k.priser=pr;
   if(!k.navn){ toast("Kunden må ha et navn."); return; }
   if(!gammel){ k.id = k.kundenr || ("k-"+slug(k.navn)+"-"+Math.random().toString(36).slice(2,5)); if(kunde(k.id)){ toast("Det finnes allerede en kunde med dette kundenummeret."); return; } S.kunder=[...S.kunder,k].sort((a,b)=>a.navn.localeCompare(b.navn,"nb")); S.kundeSel=k.id; }
   oppdaterKunde(k).then(()=>toast(`${k.navn} er lagret.`));
@@ -469,7 +474,7 @@ function leggTilProdukt(){
   const varenr=g("np-varenr").replace(/^#/,"");
   if(!/^[A-Za-z0-9_-]+$/.test(varenr)){ toast("Varenummeret kan bare inneholde tall og bokstaver."); return; }
   if(prod(varenr)){ toast("Det finnes allerede et produkt med dette varenummeret."); return; }
-  const p={varenr, kort:g("np-kort"), navn:g("np-kort"), gruppe:g("np-gruppe"), pakning:g("np-pakning"), perDP:Number(g("np-perDP"))||1, dpBruttoG:Number(g("np-dpBruttoG"))||0, stkNettoG:Number(g("np-stkNettoG"))||0, stkBruttoG:0, enhet:"stk", varetype:"Fersk ost", sort:50, aktiv:true};
+  const p={varenr, kort:g("np-kort"), navn:g("np-kort"), gruppe:g("np-gruppe"), pakning:g("np-pakning"), perDP:Number(g("np-perDP"))||1, dpBruttoG:Number(g("np-dpBruttoG"))||0, stkNettoG:Number(g("np-stkNettoG"))||0, stkBruttoG:0, pris:Number(g("np-pris").replace(",","."))||0, enhet:"stk", varetype:"Fersk ost", sort:50, aktiv:true};
   S.produkter=[...S.produkter,p]; S.nyttProdukt=false; render(); const {varenr:v,...d}=p; skriv("produkter/"+v,d).then(()=>toast(`${p.kort} er lagt til.`));
 }
 
@@ -607,6 +612,36 @@ function ysteriTekst(){
   try{ navigator.clipboard.writeText(t).then(ok,()=>fallbackKopi(t)); }catch(_){ fallbackKopi(t); }
 }
 function fallbackKopi(t){ const ta=document.createElement("textarea"); ta.value=t; ta.className="txt"; ta.style.height="240px"; ta.readOnly=true; $("#main").prepend(ta); ta.select(); toast("Teksten er markert. Kopier den med Ctrl+C eller ⌘C."); }
+function priserTekst(o){ return Object.entries(o||{}).map(([v,p])=>`${v}=${String(p).replace(".",",")}`).join("; "); }
+function lesPriser(t){ const o={}; for(const del of String(t||"").split(/[;\n]+/).map(x=>x.trim()).filter(Boolean)){ const m=del.match(/^#?([A-Za-z0-9_-]+)\s*[=:]\s*([0-9]+(?:[.,][0-9]+)?)$/); if(!m) return null; o[m[1]]=Number(m[2].replace(",",".")); } return o; }
+function prisFor(k,varenr){ const kp=k?.priser?.[varenr]; if(kp>0) return kp; const p=prod(varenr); return p?.pris>0 ? p.pris : null; }
+function lastSkript(src){ return new Promise((ok,nei)=>{ if(window.XLSX) return ok(); const s=document.createElement("script"); s.src=src; s.onload=ok; s.onerror=()=>nei(new Error("Fant ikke "+src)); document.head.appendChild(s); }); }
+/* Ordre til Unimicro: én rad per varelinje, kolonner som i Unimicros importmal (OrderTemplate.xlsx).
+   Ordrenr lages som ÅÅUU + løpenr (uke 43 i 2026 gir 264301, 264302 …). */
+async function lastNedUnimicro(){
+  const u=uke();
+  const ordre=[...S.ordre].filter(o=>(o.status||"ny")!=="fakturert" && linjer(o).length).sort((a,b)=>(a.kundeNavn||"").localeCompare(b.kundeNavn||"","nb"));
+  const utenNr=ordre.filter(o=>!kunde(o.kundeId)?.kundenr);
+  if(utenNr.length){ toast(`Mangler Unimicro-kundenummer: ${utenNr.map(o=>o.kundeNavn).join(", ")}. Legg det inn på kunden først.`); return; }
+  const utenPris=new Set(); ordre.forEach(o=>linjer(o).forEach(l=>{ if(prisFor(kunde(o.kundeId),l.varenr)===null) utenPris.add(l.p?.kort||l.varenr); }));
+  if(utenPris.size){ toast(`Mangler pris på ${[...utenPris].join(", ")}. Legg inn pris under Produkter.`); return; }
+  try { await lastSkript("vendor/xlsx.mini.min.js"); } catch(e){ toast("Klarte ikke å laste Excel-modulen. Sjekk nettforbindelsen."); return; }
+  const H=["Ordrenr","Ordredato","Leveringsdato","Kundenr","Kundenavn","Vår referanse","Deres referanse","Hovedselger","Rekvisisjon","Leveringsadr.","Lev.postnr.","Lev.poststed","Varenr.","Varenavn","Antall","Pris eks. mva","Rabatt %","Prosjekt","Avdeling"];
+  const idag=dmyLang(new Date().toISOString().slice(0,10)); const rader=[H];
+  ordre.forEach((o,i)=>{
+    const k=kunde(o.kundeId); const nr=`${String(u.y).slice(2)}${pad(u.w)}${pad(i+1)}`;
+    let adr=k.adresse||"", pnr=k.postnr||"", sted=k.poststed||"";
+    if(k.levAdresse){ const l=k.levAdresse.split(/\n|,/).map(x=>x.trim()).filter(Boolean); const m=(l[l.length-1]||"").match(/^(\d{4})\s+(.+)$/); if(m){ pnr=m[1]; sted=m[2]; adr=l.slice(0,-1).join(", "); } else adr=l.join(", "); }
+    linjer(o).forEach(l=>rader.push([nr, idag, dmyLang(o.sendes||o.prodDato||""), Number(k.kundenr), k.navn, AVSENDER.ref, k.kontakt||"", "", o.bestnr||"", adr, pnr, sted, l.varenr, l.p?.navn||l.p?.kort||l.varenr, l.antall, prisFor(k,l.varenr), "", "", ""]));
+  });
+  const ws=XLSX.utils.aoa_to_sheet(rader);
+  for(let r=1;r<rader.length;r++){ for(const c of [0,1,2,12]){ const ref=XLSX.utils.encode_cell({r,c}); if(ws[ref]){ ws[ref].t="s"; ws[ref].v=String(ws[ref].v); ws[ref].z="@"; } } }
+  ws["!cols"]=H.map((h,i)=>({wch:[10,11,11,9,30,16,16,10,12,28,9,14,8,32,8,11,8,8,8][i]}));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Data");
+  const data=XLSX.write(wb,{bookType:"xlsx",type:"array"});
+  lagre(`Unimicro ordre uke ${u.w}.xlsx`, new Blob([data],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
+  toast(`${ordre.length} ordre med ${rader.length-1} linjer er lagt i fila. Importer den i Unimicro.`);
+}
 function lastNedCSV(){
   const u=uke(); const rader=[["Uke","Kundenr","Kunde","Orgnr","Sendes","Bestillingsnr","Varenr","Vare","Antall","Status"]];
   [...S.ordre].sort((a,b)=>(a.kundeNavn||"").localeCompare(b.kundeNavn||"","nb")).forEach(o=>{ const k=kunde(o.kundeId); linjer(o).forEach(l=>rader.push([u.w,k?.kundenr||"",o.kundeNavn,k?.orgnr||"",dmyLang(o.sendes),o.bestnr||"",l.varenr,l.p?.kort||"",l.antall,o.status||"ny"])); });

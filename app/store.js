@@ -6,11 +6,11 @@ const Store = (() => {
   const LISTER = {
     produkter: { navn: "Ordrebok Produkter", nokkel: "varenr", kol: [
       ["kort",T],["navn",T],["gruppe",T],["enhet",T],["pakning",T],["perDP",N],["stkNettoG",N],["stkBruttoG",N],["dpBruttoG",N],
-      ["gtin",T],["dpGtin",T],["epd",T],["varetype",T],["sort",N],["aktiv",B] ] },
+      ["gtin",T],["dpGtin",T],["epd",T],["varetype",T],["sort",N],["aktiv",B],["pris",N] ] },
     kunder: { navn: "Ordrebok Kunder", nokkel: "id", kol: [
       ["navn",T],["kundenr",T],["orgnr",T],["adresse",T],["adresse2",T],["postnr",T],["poststed",T],["land",T],["epost",T],["telefon",T],
       ["kontakt",T],["kontaktEpost",T],["kontaktTlf",T],["levNavn",T],["levAdresse",M],["transport",T],["cmr",B],["leveringsdag",T],
-      ["merknad",M],["instruks",M],["fastFrekvens",T],["fast",J],["inaktiv",B] ] },
+      ["merknad",M],["instruks",M],["fastFrekvens",T],["fast",J],["inaktiv",B],["priser",J] ] },
     ordre: { navn: "Ordrebok Ordre", nokkel: "id", kol: [
       ["uke",T,{indexed:true}],["kundeId",T],["kundeNavn",T],["linjer",J],["transport",T],["sendes",T],["prodDato",T],["bestnr",T],
       ["merknad",M],["status",T],["kilde",T],["opprettet",T],["endret",T] ] },
@@ -37,6 +37,7 @@ const Store = (() => {
     const site = await g("GET", `/sites/${C.siteHost}:${C.sitePath}?$select=id,displayName`);
     siteId = site.id;
     const mangler = await finnLister();
+    if(!mangler.length) await sikreKolonner().catch(e => console.warn("Kunne ikke legge til nye kolonner", e));
     return { tilstand: mangler.length ? "oppsett" : "klar", mangler, bruker: { navn: konto.name || konto.username, epost: konto.username } };
   }
   const loggInn = () => app.loginRedirect({ scopes: SCOPES, prompt: "select_account" });
@@ -79,6 +80,14 @@ const Store = (() => {
       if(l) listeId[k] = l.id; else mangler.push(k);
     }
     return mangler;
+  }
+  /* Nye felt i senere versjoner (f.eks. pris) legges til i eksisterende lister. */
+  async function sikreKolonner(){
+    for(const [k, def] of Object.entries(LISTER)){
+      const j = await g("GET", `/sites/${siteId}/lists/${listeId[k]}/columns?$select=name&$top=999`);
+      const finnes = new Set(j.value.map(c => c.name));
+      for(const kol of def.kol) if(!finnes.has(kol[0])) await g("POST", `/sites/${siteId}/lists/${listeId[k]}/columns`, kolonne(kol));
+    }
   }
   function kolonne([navn, type, valg]){
     const c = { name: navn };
