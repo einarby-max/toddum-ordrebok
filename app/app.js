@@ -7,7 +7,7 @@ const TRANSPORT_START = [
 const STATUS = [["ny","Ny"],["produsert","Produsert"],["sendt","Sendt"],["fakturert","Fakturert"]];
 const FREKVENS = [["ingen","Ingen fast ordre"],["hver","Hver uke"],["partall","Partallsuker"],["oddetall","Oddetallsuker"]];
 
-const S = { db:null, fase:"start", bruker:null, feil:"", mangler:[], importStatus:"", pdfVindu:null, pollN:0, produkter:[], kunder:[], ordre:[], transport:[], visDP:new Map(), wordImport:null, nyTransport:false, tab:"uke", ukeDato:new Date(), open:new Set(), override:new Map(), loaded:{p:false,k:false,o:false}, kundeSel:null, kundeSok:"", leggTil:"", sugIdx:0, pending:0, unsubOrdre:null, confirmDel:null, nyttProdukt:false };
+const S = { db:null, fase:"start", bruker:null, feil:"", mangler:[], importStatus:"", pdfVindu:null, pollN:0, produkter:[], kunder:[], ordre:[], transport:[], visDP:new Map(), wordImport:null, nyTransport:false, lagret:new Map(), siste:new Map(), kunLes:false, tab:"uke", ukeDato:new Date(), open:new Set(), override:new Map(), loaded:{p:false,k:false,o:false}, kundeSel:null, kundeSok:"", leggTil:"", sugIdx:0, pending:0, unsubOrdre:null, confirmDel:null, nyttProdukt:false };
 
 /* ---------- hjelpere ---------- */
 const $ = s => document.querySelector(s);
@@ -41,7 +41,7 @@ function iDP(o,p){ if(!p || !(p.perDP>2)) return false;   /* spann (2 per DP) te
 const enhetNavn = (p,n) => ({spann:"spann",kg:"kg",liter:"l",pose:n===1?"pose":"poser",beger:"beger"})[p?.enhet] || (/spann/i.test(p?.kort||"")?"spann":"stk");
 function antallTekst(a,p){ if(!a) return ""; const e=enhetNavn(p,a); if(!p || !(p.perDP>2)) return `${nf(a)} ${e}`; const d=dpTekst(a,p); return d&&!/^\d+ DP$/.test(d) ? `${nf(a)} ${e} = ${d.replace(/\+ (\d+)$/,"+ $1 løse")}` : `${nf(a)} ${e}${d?` = ${d}`:""}`; }
 function toast(msg){ const t=$("#toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast.t); toast.t=setTimeout(()=>t.hidden=true,3200); }
-function errMsg(e){ const s=e&&e.status; if(s===0) return "Ingen nettforbindelse. Endringen ble ikke lagret."; if(s===401) return "Innloggingen har gått ut. Last inn siden på nytt."; if(s===403) return "Du har ikke skrivetilgang til Toddum-området i SharePoint. Be Silje legge deg til i teamet."; return "Klarte ikke å lagre i SharePoint. Prøv igjen om litt."; }
+function errMsg(e){ const s=e&&e.status; if(s===0) return "Ingen nettforbindelse. Endringen ble ikke lagret."; if(s===401) return "Innloggingen har gått ut. Last inn siden på nytt."; if(s===403) return "Du har bare lesetilgang til ordreboka. Endringen ble ikke lagret."; return "Klarte ikke å lagre i SharePoint. Prøv igjen om litt."; }
 function ukeParitet(w){ return w%2===0?"partall":"oddetall"; }
 function slug(s){ return s.toLowerCase().replace(/[æ]/g,"ae").replace(/[ø]/g,"o").replace(/[å]/g,"a").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,40); }
 
@@ -54,13 +54,27 @@ function skriv(path, data){
   return p.catch(e=>{ toast(errMsg(e)); throw e; }).finally(()=>{ S.pending--; visSync(); });
 }
 function lagreOrdre(o){
+  if(S.kunLes){ toast("Du har bare lesetilgang til ordreboka."); return Promise.resolve(); }
   o={...o, endret:new Date().toISOString()};
   S.override.set(o.id,o);
   const i=S.ordre.findIndex(x=>x.id===o.id); if(i>=0) S.ordre[i]=o; else S.ordre.push(o);
+  S.lagret.set(o.id,{st:"lagrer"});
   planRender();
   const {id,...data}=o;
-  skriv("ordre/"+id, data).then(()=>{ if(S.override.get(id)===o) S.override.delete(id); }).catch(()=>{ S.override.delete(id); });
+  const p=skriv("ordre/"+id, data).then(()=>{ if(S.override.get(id)===o) S.override.delete(id); if(S.siste.get(id)===p) S.lagret.set(id,{st:"ok",tid:new Date()}); planRender(); })
+    .catch(e=>{ S.override.delete(id); S.lagret.set(id,{st:"feil"}); if(e&&e.status===403) settKunLes(); planRender(); throw e; });
+  S.siste.set(id,p); p.catch(()=>{});
+  return p;
 }
+function settKunLes(){ if(S.kunLes) return; S.kunLes=true; render(); }
+async function lagreKnapp(id){
+  const ae=document.activeElement; if(ae && ae.blur && ae.closest && ae.closest(`#o-${CSS.escape(id)}`)) ae.blur();   // utløser lagring av feltet man står i
+  await new Promise(r=>setTimeout(r,60));
+  const p=S.siste.get(id); const o=finnOrdre(id);
+  try{ if(p) await p; S.lagret.set(id,{st:"ok",tid:new Date()}); S.open.delete(id); render(); toast(`✓ Ordren til ${o?.kundeNavn||"kunden"} er lagret.`); }
+  catch(e){ toast(errMsg(e)+" Prøv å trykke Lagre igjen."); render(); }
+}
+function lagretTekst(id){ const s=S.lagret.get(id); if(!s) return `<span class="lst ok">✓ Lagret</span>`; if(s.st==="lagrer") return `<span class="lst">Lagrer …</span>`; if(s.st==="feil") return `<span class="lst feil">Ikke lagret – trykk Lagre</span>`; return `<span class="lst ok">✓ Lagret kl. ${pad(s.tid.getHours())}.${pad(s.tid.getMinutes())}</span>`; }
 function visSync(){ const el=$("#sync"); if(!el) return; const st = !S.db ? "" : S.pending? "Lagrer …" : "Lagret i SharePoint"; el.innerHTML = S.bruker ? `<span>${esc(st)}</span><span class="who">${esc(S.bruker.navn)} · <button class="linkbtn" id="loggUt">Logg ut</button></span>` : esc(st); const lo=$("#loggUt"); if(lo) lo.onclick=()=>Store.loggUt(); }
 
 /* ---------- oppstart ---------- */
@@ -120,6 +134,7 @@ function render(){
   $("#weekLbl").innerHTML=`<b>Uke ${u.w}</b><span>${fmtD(m)}–${fmtD(s)}.${s.getFullYear()}</span>`;
   document.querySelectorAll(".tab").forEach(t=>t.setAttribute("aria-selected", String(t.dataset.tab===S.tab)));
   const main=$("#main");
+  main.classList.toggle("ro", !!S.kunLes);
   if(S.fase!=="klar" && S.fase!=="start") main.innerHTML=visFase();
   else if(!(S.loaded.p&&S.loaded.k)) { /* behold lastevisning */ }
   else if(S.tab==="uke") main.innerHTML=visUke();
@@ -179,6 +194,7 @@ function visUke(){
     <button class="btn" data-act="unimicro" ${ordre.length?"":"disabled"} title="Lager en Excel-fil i Unimicros importmal for ordre. Ordre med status Fakturert tas ikke med.">Ordre til Unimicro (Excel)</button>
     <button class="btn danger ghost" data-act="tomUke" ${ordre.length?"":"disabled"}>${S.confirmTom?`Trykk igjen for å slette ${ordre.length} ordre`:"Tøm uka"}</button>
   </div>
+  ${S.kunLes?`<p class="notice"><b>Lesetilgang.</b> Du kan se ukas ordre og ysterilista, men ikke endre noe.</p>`:""}
   ${S.wordImport?visWordImport():""}
   <div class="stats"><span><b>${ordre.length}</b> ordre</span><span><b>${nf(totStk)}</b> enheter</span><span><b>${nf(totKg,1)}</b> kg ost (netto)</span><span>${STATUS.map(([k,l])=>`${l}: <b>${ordre.filter(o=>(o.status||"ny")===k).length}</b>`).join(" · ")}</span></div>
   ${!S.loaded.o?`<div class="empty"><h3>Henter ordre for uke ${u.w} …</h3></div>`:
@@ -228,6 +244,7 @@ function visOrdre(o){
   let h=`<article class="card" id="o-${esc(o.id)}">
   <div class="ohead" data-act="toggle" data-id="${esc(o.id)}">
     <div class="name">${esc(o.kundeNavn||k?.navn||"Ukjent kunde")}<small>${esc(under||"Ingen transport valgt")}${o.kilde==="fast"?" · fast ordre":""}</small></div>
+    ${!åpen && S.lagret.get(o.id)?.st==="ok" ? lagretTekst(o.id) : !åpen && S.lagret.get(o.id)?.st==="feil" ? lagretTekst(o.id) : ""}
     <span class="hint">${nf(kg,1)} kg</span>
     <span class="pill st-${st}">${esc((STATUS.find(s=>s[0]===st)||[,st])[1])}</span>
     <span aria-hidden="true">${åpen?"▴":"▾"}</span>
@@ -255,6 +272,7 @@ function visOrdre(o){
       <label class="f">Status<select class="txt" id="st-${esc(o.id)}" data-act="felt" data-f="status" data-id="${esc(o.id)}">${STATUS.map(([v,l])=>`<option value="${v}" ${st===v?"selected":""}>${l}</option>`).join("")}</select></label>
       <label class="f wide">Merknad til ysteriet<input class="txt" id="m-${esc(o.id)}" data-act="felt" data-f="merknad" data-id="${esc(o.id)}" value="${esc(o.merknad||"")}" placeholder="${esc(k?.merknad||"")}"></label>
     </div>
+    ${S.kunLes?"":`<div class="actions lagrerad"><button class="btn primary lagre" data-act="lagreOrdre" data-id="${esc(o.id)}">Lagre</button>${lagretTekst(o.id)}<span class="hint">Endringer lagres også av seg selv. «Lagre» bekrefter og lukker ordren.</span></div>`}
     <div class="actions">
       <button class="btn primary" data-act="pakkseddel" data-id="${esc(o.id)}" ${ls.length?"":"disabled"}>Pakkseddel (PDF)</button>
       ${trengerCMR(o)?`<button class="btn primary" data-act="cmr" data-id="${esc(o.id)}" ${ls.length?"":"disabled"}>CMR × 3 (PDF)</button>`:`<button class="btn" data-act="cmr" data-id="${esc(o.id)}" ${ls.length?"":"disabled"}>CMR (PDF)</button>`}
@@ -404,7 +422,9 @@ function bindGlobalt(){
   $("#thisWeek").onclick=()=>{ S.ukeDato=new Date(); S.open.clear(); abonnerUke(); render(); };
   document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{ S.tab=t.dataset.tab; render(); });
   const main=$("#main");
-  main.addEventListener("click", klikk);
+  /* Lagre reageres på allerede ved mousedown: ellers kan siden tegnes på nytt (fordi feltet man sto i lagres) før klikket kommer fram. */
+  main.addEventListener("mousedown", e=>{ const b=e.target.closest("[data-act=lagreOrdre]"); if(!b) return; e.preventDefault(); S.lagreMd=Date.now(); lagreKnapp(b.dataset.id); });
+  main.addEventListener("click", e=>{ if(e.target.closest("[data-act=lagreOrdre]") && Date.now()-(S.lagreMd||0)<1500) return; klikk(e); });
   main.addEventListener("change", endring);
   main.addEventListener("input", e=>{
     const a=e.target.dataset.act;
@@ -435,6 +455,7 @@ function klikk(e){
   const a=el.dataset.act, id=el.dataset.id;
   if(a==="toggle"){ if(e.target.closest("select,input,button:not([data-act=toggle])")) return; S.open.has(id)?S.open.delete(id):S.open.add(id); S.confirmDel=null; render(); }
   else if(a==="nyOrdre") nyOrdre(id);
+  else if(a==="lagreOrdre") lagreKnapp(id);
   else if(a==="wiLegg") leggInnWord();
   else if(a==="wiAvbryt"){ S.wordImport=null; render(); }
   else if(a==="pluss"||a==="minus"){ const o=finnOrdre(id); if(o) stegAntall(o,el.dataset.v,a==="pluss"?1:-1); }
