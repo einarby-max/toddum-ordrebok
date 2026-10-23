@@ -1,11 +1,13 @@
 
 const AVSENDER = { navn:"Toddum Gårdsysteri AS", adresse:"Gullvikvegen 193", postnr:"7810", poststed:"NAMSOS", orgnr:"929953088", epost:"silje@toddum.com", tlf:"94307328", ref:"Silje Kvaale By", hentested:"Spillum - Namsos" };
-const TRANSPORT = ["Kristensen Transport","Nær Engros Namsos","Namdalingen","Henter selv","Egen levering","Post/Bring","Annet"];
-const TRANSPORT_ADR = { "Kristensen Transport":"Kristensen Transport AS\nUtvordvegen 850, 7777 Nord-Statland" };
+/* Startliste for transportører. Legges i SharePoint første gang; deretter redigeres de under fanen Transport. */
+const TRANSPORT_START = [
+  {navn:"Kristensen Transport", adresse:"Kristensen Transport AS\nUtvordvegen 850, 7777 Nord-Statland", cmr:true},
+  {navn:"Nær Engros Namsos"}, {navn:"Namdalingen"}, {navn:"Henter selv"}, {navn:"Egen levering"}, {navn:"Post/Bring"}, {navn:"Annet"} ];
 const STATUS = [["ny","Ny"],["produsert","Produsert"],["sendt","Sendt"],["fakturert","Fakturert"]];
 const FREKVENS = [["ingen","Ingen fast ordre"],["hver","Hver uke"],["partall","Partallsuker"],["oddetall","Oddetallsuker"]];
 
-const S = { db:null, fase:"start", bruker:null, feil:"", mangler:[], importStatus:"", pdfVindu:null, pollN:0, produkter:[], kunder:[], ordre:[], tab:"uke", ukeDato:new Date(), open:new Set(), override:new Map(), loaded:{p:false,k:false,o:false}, kundeSel:null, kundeSok:"", leggTil:"", sugIdx:0, pending:0, unsubOrdre:null, confirmDel:null, nyttProdukt:false };
+const S = { db:null, fase:"start", bruker:null, feil:"", mangler:[], importStatus:"", pdfVindu:null, pollN:0, produkter:[], kunder:[], ordre:[], transport:[], visDP:new Map(), wordImport:null, nyTransport:false, tab:"uke", ukeDato:new Date(), open:new Set(), override:new Map(), loaded:{p:false,k:false,o:false}, kundeSel:null, kundeSok:"", leggTil:"", sugIdx:0, pending:0, unsubOrdre:null, confirmDel:null, nyttProdukt:false };
 
 /* ---------- hjelpere ---------- */
 const $ = s => document.querySelector(s);
@@ -29,7 +31,15 @@ function dpTekst(antall,p){ if(!p||!p.perDP) return ""; const dp=Math.floor(anta
 function kgNetto(antall,p){ return p? antall*(p.stkNettoG||0)/1000 : 0; }
 function kgBrutto(antall,p){ if(!p) return 0; if(!p.perDP) return antall*(p.stkBruttoG||p.stkNettoG||0)/1000; const dp=Math.floor(antall/p.perDP), r=antall%p.perDP; return (dp*(p.dpBruttoG||0) + r*(p.stkBruttoG||0))/1000; }
 function adresseLinjer(k,o){ if(!k) return [o?.kundeNavn||""]; if(k.levAdresse) return [k.levNavn||k.navn, ...k.levAdresse.split(/\n/)]; return [k.navn, k.adresse, k.adresse2, [k.postnr,k.poststed].filter(Boolean).join(" ")].filter(Boolean); }
-function trengerCMR(o){ const k=kunde(o.kundeId); return o.transport==="Kristensen Transport" || (k&&k.cmr); }
+const transportør = navn => S.transport.find(t=>t.navn===navn);
+const transportNavn = () => S.transport.filter(t=>t.aktiv!==false).sort((a,b)=>(a.sort||0)-(b.sort||0)||a.navn.localeCompare(b.navn,"nb")).map(t=>t.navn);
+function transportValg(valgt){ const n=transportNavn(); if(valgt && !n.includes(valgt)) n.push(valgt); return n.map(t=>`<option ${valgt===t?"selected":""}>${esc(t)}</option>`).join(""); }
+function transportAdresse(navn){ const t=transportør(navn); return (t&&t.adresse) ? t.adresse : (navn||""); }
+function trengerCMR(o){ const k=kunde(o.kundeId); return !!(transportør(o.transport)?.cmr || (k&&k.cmr)); }
+/* Antall lagres alltid i salgsenheten (beger, spann, kg, liter). Kunder som bestiller i D-pak, vises og justeres i D-pak. */
+function iDP(o,p){ if(!p || !(p.perDP>2)) return false;   /* spann (2 per DP) telles alltid i spann */ const v=S.visDP.get(o.id); if(v!=null) return v; return kunde(o.kundeId)?.antallI==="dp"; }
+const enhetNavn = (p,n) => ({spann:"spann",kg:"kg",liter:"l",pose:n===1?"pose":"poser",beger:"beger"})[p?.enhet] || (/spann/i.test(p?.kort||"")?"spann":"stk");
+function antallTekst(a,p){ if(!a) return ""; const e=enhetNavn(p,a); if(!p || !(p.perDP>2)) return `${nf(a)} ${e}`; const d=dpTekst(a,p); return d&&!/^\d+ DP$/.test(d) ? `${nf(a)} ${e} = ${d.replace(/\+ (\d+)$/,"+ $1 løse")}` : `${nf(a)} ${e}${d?` = ${d}`:""}`; }
 function toast(msg){ const t=$("#toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast.t); toast.t=setTimeout(()=>t.hidden=true,3200); }
 function errMsg(e){ const s=e&&e.status; if(s===0) return "Ingen nettforbindelse. Endringen ble ikke lagret."; if(s===401) return "Innloggingen har gått ut. Last inn siden på nytt."; if(s===403) return "Du har ikke skrivetilgang til Toddum-området i SharePoint. Be Silje legge deg til i teamet."; return "Klarte ikke å lagre i SharePoint. Prøv igjen om litt."; }
 function ukeParitet(w){ return w%2===0?"partall":"oddetall"; }
@@ -68,11 +78,19 @@ async function start(){
 }
 async function lastAlt(){
   S.fase="klar"; S.db=true; render();
-  const [p,k]=await Promise.all([Store.hent("produkter"),Store.hent("kunder")]);
+  const [p,k,t]=await Promise.all([Store.hent("produkter"),Store.hent("kunder"),Store.hent("transport").catch(()=>[])]);
   S.produkter=p; S.kunder=k.sort((a,b)=>a.navn.localeCompare(b.navn,"nb")); S.loaded.p=S.loaded.k=true;
+  settTransport(t);
   await hentUke();
   if(!S.pollT){ S.pollT=setInterval(poll,20000); document.addEventListener("visibilitychange",()=>{ if(!document.hidden) poll(); }); }
 }
+function settTransport(liste){
+  if(liste.length || !Store.harListe("transport")){ S.transport = liste.length ? liste : TRANSPORT_START.map((t,i)=>({id:slug(t.navn),adresse:"",kontakt:"",telefon:"",epost:"",cmr:false,merknad:"",aktiv:true,sort:i,...t})); return; }
+  /* Tom liste i SharePoint: legg inn startlista én gang. */
+  S.transport=TRANSPORT_START.map((t,i)=>({id:slug(t.navn),adresse:"",kontakt:"",telefon:"",epost:"",cmr:false,merknad:"",aktiv:true,sort:i,...t}));
+  S.transport.forEach(lagreTransport);
+}
+function lagreTransport(t){ const i=S.transport.findIndex(x=>x.id===t.id); if(i>=0) S.transport[i]=t; else S.transport.push(t); planRender(); const {id,...d}=t; return skriv("transport/"+id,d); }
 async function hentUke(){
   const key=uke().key;
   try{
@@ -88,7 +106,7 @@ async function poll(){
   S.pollN++;
   await hentUke();
   if(S.pollN%6===0 && S.tab!=="kunder" && S.tab!=="produkter"){
-    try{ const [p,k]=await Promise.all([Store.hent("produkter"),Store.hent("kunder")]); S.produkter=p; S.kunder=k.sort((a,b)=>a.navn.localeCompare(b.navn,"nb")); planRender(); }catch(_){}
+    try{ const [p,k]=await Promise.all([Store.hent("produkter"),Store.hent("kunder")]); S.produkter=p; S.kunder=k.sort((a,b)=>a.navn.localeCompare(b.navn,"nb")); if(S.tab!=="transport"){ const t=await Store.hent("transport"); if(t.length) S.transport=t; } planRender(); }catch(_){}
   }
 }
 function abonnerUke(){ if(!S.db) return; S.loaded.o=false; S.ordre=[]; hentUke(); }
@@ -107,6 +125,7 @@ function render(){
   else if(S.tab==="uke") main.innerHTML=visUke();
   else if(S.tab==="ysteri") main.innerHTML=visYsteri();
   else if(S.tab==="kunder") main.innerHTML=visKunder();
+  else if(S.tab==="transport") main.innerHTML=visTransport();
   else main.innerHTML=visProdukter();
   if(fid){ const el=document.getElementById(fid); if(el && el!==document.activeElement){ if(fval!=null && el.value!==fval && el.dataset.keep!=="0") el.value=fval; el.focus(); try{ if(fsel) el.setSelectionRange(fsel[0],fsel[1]); }catch(_){} } }
   visSync();
@@ -156,13 +175,50 @@ function visUke(){
     </div>
     <button class="btn" data-act="hentFaste" ${faste.length?"":"disabled"} title="${faste.map(k=>esc(k.navn)).join(", ")}">Hent faste ordre${faste.length?` (${faste.length})`:""}</button>
     <button class="btn" data-act="kopierForrige" title="Lager ordre for kundene fra forrige uke med samme varer og antall. Kunder som allerede har ordre denne uka, hoppes over.">Kopier forrige uke</button>
+    <label class="btn" title="Last opp ukelista fra Word (.docx). Du ser forslaget før noe lagres.">Importer Word-liste<input type="file" id="wordFil" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden></label>
     <button class="btn" data-act="unimicro" ${ordre.length?"":"disabled"} title="Lager en Excel-fil i Unimicros importmal for ordre. Ordre med status Fakturert tas ikke med.">Ordre til Unimicro (Excel)</button>
     <button class="btn danger ghost" data-act="tomUke" ${ordre.length?"":"disabled"}>${S.confirmTom?`Trykk igjen for å slette ${ordre.length} ordre`:"Tøm uka"}</button>
   </div>
+  ${S.wordImport?visWordImport():""}
   <div class="stats"><span><b>${ordre.length}</b> ordre</span><span><b>${nf(totStk)}</b> enheter</span><span><b>${nf(totKg,1)}</b> kg ost (netto)</span><span>${STATUS.map(([k,l])=>`${l}: <b>${ordre.filter(o=>(o.status||"ny")===k).length}</b>`).join(" · ")}</span></div>
   ${!S.loaded.o?`<div class="empty"><h3>Henter ordre for uke ${u.w} …</h3></div>`:
     ordre.length? `<div class="orders">${ordre.map(visOrdre).join("")}</div>` :
     `<div class="empty"><h3>Ingen ordre i uke ${u.w} ennå</h3>Skriv et kundenavn i feltet over for å legge inn første ordre${faste.length?`, eller trykk «Hent faste ordre» for å legge inn ${faste.length} faste ordre på én gang`:""}. Med «Kopier forrige uke» henter du alle ordrene fra uka før og justerer bare antallet.</div>`}`;
+}
+
+function visWordImport(){
+  const w=S.wordImport, u=uke(), har=new Set(S.ordre.map(o=>o.kundeId));
+  const aktive=S.kunder.filter(k=>!k.inaktiv);
+  const klar=w.rader.filter(r=>r.med && r.kundeId && Object.keys(r.linjer).length && !har.has(r.kundeId));
+  const chips=r=>Object.entries(r.linjer).map(([v,n])=>{ const p=prod(v); return `<span class="chip g-${esc(p?.gruppe||"")}">${esc(antallTekst(n,p))} ${esc(p?.kort||v)}</span>`; }).join("");
+  return `<div class="card wimp" id="wordImport">
+    <h3>Import fra Word: ${esc(w.filnavn)}</h3>
+    <p class="hint">${w.uke&&w.uke!==u.w?`<b style="color:var(--warn)">Lista er merket uke ${w.uke}, men du står i uke ${u.w}.</b> Bytt uke øverst hvis ordrene skal inn i uke ${w.uke}. `:""}Sjekk kunde og varer for hver rad. Velg riktig kunde der den mangler. Det du velger, huskes til neste import. Kommentaren blir merknad til ysteriet. Kunder som allerede har ordre denne uka, hoppes over.</p>
+    <div class="tablewrap"><table class="grid"><thead><tr><th>Med</th><th>I Word</th><th>Kunde i ordreboka</th><th>Varer (tolket)</th><th>Kommentar</th></tr></thead><tbody>
+    ${w.rader.map((r,i)=>{ const finnes=r.kundeId&&har.has(r.kundeId); const hopp=!r.med||finnes||!Object.keys(r.linjer).length;
+      return `<tr class="${hopp?"hopp":""}">
+      <td><input type="checkbox" id="wi-med-${i}" data-act="wiMed" data-i="${i}" ${r.med?"checked":""} aria-label="Ta med ${esc(r.tekst)}"></td>
+      <td><b>${esc(r.tekst)}</b><div class="hint">${Object.entries(r.celler).map(([g,t])=>`${esc(g)}: ${esc(t)}`).join("<br>")}</div></td>
+      <td><select class="txt" id="wi-k-${i}" data-act="wiKunde" data-i="${i}" style="min-width:200px"><option value="">Velg kunde …</option>${aktive.map(k=>`<option value="${esc(k.id)}" ${k.id===r.kundeId?"selected":""}>${esc(k.navn)}</option>`).join("")}</select>${finnes?`<div class="hint">Har allerede ordre denne uka</div>`:""}</td>
+      <td>${chips(r)||`<span class="hint">Ingen varer</span>`}${r.ukjent.length?`<div class="ukjent">${esc(r.ukjent.join(" · "))}</div>`:""}</td>
+      <td class="hint">${esc(r.kommentar)}</td></tr>`; }).join("")}
+    </tbody></table></div>
+    <div class="actions"><button class="btn primary" data-act="wiLegg" ${klar.length?"":"disabled"}>Legg inn ${klar.length} ordre i uke ${u.w}</button><button class="btn ghost" data-act="wiAvbryt">Avbryt</button>
+      <span class="hint">Tekst merket «Ikke tolket» må legges inn for hånd etterpå.</span></div>
+  </div>`;
+}
+function leggInnWord(){
+  const w=S.wordImport, u=uke(), har=new Set(S.ordre.map(o=>o.kundeId)); let n=0, delvis=0;
+  for(const r of w.rader){
+    if(!r.med || !r.kundeId || har.has(r.kundeId) || !Object.keys(r.linjer).length) continue;
+    const k=kunde(r.kundeId); if(!k) continue;
+    const lin={}; Object.entries(r.linjer).forEach(([v,a])=>lin[v]={antall:a});
+    const id=`${u.key}-${slug(k.navn)||"kunde"}-${Math.random().toString(36).slice(2,6)}`;
+    lagreOrdre({id, uke:u.key, kundeId:k.id, kundeNavn:k.navn, linjer:lin, transport:k.transport||"", sendes:"", prodDato:"", bestnr:"", merknad:[r.kommentar, r.ukjent.length?`Fra Word, ikke tolket: ${r.ukjent.join("; ")}`:""].filter(Boolean).join(" · "), status:"ny", kilde:"word", opprettet:new Date().toISOString()});
+    har.add(k.id); n++; if(r.ukjent.length) delvis++;
+  }
+  S.wordImport=null; render();
+  toast(`${n} ordre er lagt inn fra Word${delvis?`. ${delvis} har tekst som ikke ble tolket – se merknaden på ordren`:""}.`);
 }
 
 function visOrdre(o){
@@ -181,16 +237,18 @@ function visOrdre(o){
     return h+`</article>`;
   }
   const batchStd=batchFra(o.prodDato);
+  const dpModus=iDP(o,{perDP:6}), harDP=prodSort().some(p=>p.perDP>2);
   h+=`<div class="obody">
-    <div class="lines">${prodSort().map(p=>{ const l=(o.linjer||{})[p.varenr]; const a=l?.antall||0;
+    ${harDP?`<div class="modus"><span class="hint">Antall i</span><label class="seg"><input type="radio" name="dm-${esc(o.id)}" id="dm-${esc(o.id)}-stk" data-act="dpModus" data-id="${esc(o.id)}" value="stk" ${dpModus?"":"checked"}><span>Beger / stk</span></label><label class="seg"><input type="radio" name="dm-${esc(o.id)}" id="dm-${esc(o.id)}-dp" data-act="dpModus" data-id="${esc(o.id)}" value="dp" ${dpModus?"checked":""}><span>D-pak</span></label></div>`:""}
+    <div class="lines">${prodSort().map(p=>{ const l=(o.linjer||{})[p.varenr]; const a=l?.antall||0; const idp=iDP(o,p);
       return `<div class="line bl-${esc(p.gruppe)} ${a?"has":""}">
-        <div class="pn">${esc(p.kort)}<small>#${esc(p.varenr)} · ${esc(p.pakning)}${a?` · ${esc(dpTekst(a,p))}`:""}</small></div>
-        <input id="q-${esc(o.id)}-${esc(p.varenr)}" inputmode="decimal" data-act="qty" data-id="${esc(o.id)}" data-v="${esc(p.varenr)}" value="${a||""}" placeholder="–" aria-label="Antall ${esc(p.kort)}" title="Antall ${esc(p.enhet||"stk")}. Skriv f.eks. 4dp for 4 detaljistpakninger">
+        <div class="pn">${esc(p.kort)}<small>#${esc(p.varenr)} · ${esc(p.pakning)}</small>${a?`<small class="ant">${esc(antallTekst(a,p))}</small>`:""}</div>
+        <div class="qty"><button type="button" class="stp" data-act="minus" data-id="${esc(o.id)}" data-v="${esc(p.varenr)}" aria-label="Én ${idp?"D-pak":"enhet"} mindre ${esc(p.kort)}" ${a?"":"disabled"}>−</button><input id="q-${esc(o.id)}-${esc(p.varenr)}" inputmode="decimal" data-act="qty" data-id="${esc(o.id)}" data-v="${esc(p.varenr)}" value="${esc(visAntall(a,o,p))}" placeholder="–" aria-label="Antall ${esc(p.kort)} i ${idp?"D-pak":enhetNavn(p,2)}" title="${idp?"Antall D-pak. 1,5 = 1 D-pak og 3 løse.":"Antall "+enhetNavn(p,2)+". Skriv 2dp for to D-pak."}"><button type="button" class="stp" data-act="pluss" data-id="${esc(o.id)}" data-v="${esc(p.varenr)}" aria-label="Én ${idp?"D-pak":"enhet"} mer ${esc(p.kort)}">+</button><span class="u">${idp?"D-pak":esc(enhetNavn(p,2))}</span></div>
         ${a?`<div class="bt">Batch <input id="b-${esc(o.id)}-${esc(p.varenr)}" data-act="batch" data-id="${esc(o.id)}" data-v="${esc(p.varenr)}" value="${esc(l.batch||"")}" placeholder="${esc(batchStd||"–")}" aria-label="Batch ${esc(p.kort)}"></div>`:""}
       </div>`; }).join("")}</div>
-    <p class="hint" style="margin:-8px 0 0">Antall er i ${"beger/spann"}. Skriv <b>4dp</b> for fire detaljistpakninger. Batch fylles automatisk fra produksjonsdato (DDMMÅÅ × 2) hvis feltet står tomt.</p>
+    <p class="hint" style="margin:-8px 0 0">Bruk − og + eller skriv antall. Med «Beger / stk» kan du også skrive <b>1,5dp</b> eller <b>1dp+3</b>. Med «D-pak» betyr 1,5 én D-pak og tre løse, og <b>3b</b> gir tre løse. Batch fylles automatisk fra produksjonsdato (DDMMÅÅ × 2) hvis feltet står tomt.</p>
     <div class="meta">
-      <label class="f">Transport<select class="txt" id="t-${esc(o.id)}" data-act="felt" data-f="transport" data-id="${esc(o.id)}"><option value="">Velg …</option>${TRANSPORT.map(t=>`<option ${o.transport===t?"selected":""}>${esc(t)}</option>`).join("")}</select></label>
+      <label class="f">Transport<select class="txt" id="t-${esc(o.id)}" data-act="felt" data-f="transport" data-id="${esc(o.id)}"><option value="">Velg …</option>${transportValg(o.transport)}</select></label>
       <label class="f">Sendes<input type="date" class="txt" id="s-${esc(o.id)}" data-act="felt" data-f="sendes" data-id="${esc(o.id)}" value="${esc(o.sendes||"")}"></label>
       <label class="f">Produksjonsdato<input type="date" class="txt" id="p-${esc(o.id)}" data-act="felt" data-f="prodDato" data-id="${esc(o.id)}" value="${esc(o.prodDato||"")}"></label>
       <label class="f">Bestillingsnr.<input class="txt" id="n-${esc(o.id)}" data-act="felt" data-f="bestnr" data-id="${esc(o.id)}" value="${esc(o.bestnr||"")}"></label>
@@ -261,7 +319,8 @@ function kundeSkjema(k){
     <label class="f">Kundepriser eks. mva (avvik fra listepris)<input class="txt" id="kf-priser" data-f="priser" value="${esc(priserTekst(k.priser))}" placeholder="f.eks. 0032=140; 0001=38"></label>
     <h4>Levering</h4>
     <div class="row">${fi("levNavn","Leveres til (navn)","placeholder='Samme som kunde'")}<label class="f">Leveringsadresse<input class="txt" id="kf-levAdresse" data-f="levAdresse" value="${esc(k.levAdresse||"")}" placeholder="Gate, postnr. sted"></label>
-      <label class="f">Transport<select class="txt" id="kf-transport" data-f="transport"><option value="">Ikke valgt</option>${TRANSPORT.map(t=>`<option ${k.transport===t?"selected":""}>${esc(t)}</option>`).join("")}</select></label>${fi("leveringsdag","Fast leveringsdag","placeholder='f.eks. tirsdag'")}</div>
+      <label class="f">Transport<select class="txt" id="kf-transport" data-f="transport"><option value="">Ikke valgt</option>${transportValg(k.transport)}</select></label>${fi("leveringsdag","Fast leveringsdag","placeholder='f.eks. tirsdag'")}
+      <label class="f">Bestiller antall i<select class="txt" id="kf-antallI" data-f="antallI"><option value="" ${k.antallI==="dp"?"":"selected"}>Beger / stk (løse)</option><option value="dp" ${k.antallI==="dp"?"selected":""}>D-pak</option></select></label></div>
     <label class="chk"><input type="checkbox" id="kf-cmr" data-f="cmr" ${k.cmr?"checked":""}> Trenger CMR</label>
     <label class="f">Instruks på CMR<input class="txt" id="kf-instruks" data-f="instruks" value="${esc(k.instruks||"")}" placeholder="f.eks. Kjølevare - behandles forsiktig"></label>
     <label class="f">Fast merknad til ysteriet<input class="txt" id="kf-merknad" data-f="merknad" value="${esc(k.merknad||"")}"></label>
@@ -271,6 +330,43 @@ function kundeSkjema(k){
     <label class="chk"><input type="checkbox" id="kf-inaktiv" data-f="inaktiv" ${k.inaktiv?"checked":""}> Inaktiv kunde</label>
     <div class="actions"><button class="btn primary" type="submit">Lagre kunde</button>${fast.length?`<button class="btn" type="button" data-act="fjernFast">Fjern faste varer</button>`:""}</div>
   </form>`;
+}
+
+function visTransport(){
+  const liste=[...S.transport].sort((a,b)=>(b.aktiv!==false)-(a.aktiv!==false)||(a.sort||0)-(b.sort||0)||a.navn.localeCompare(b.navn,"nb"));
+  const bruk=n=>S.kunder.filter(k=>k.transport===n&&!k.inaktiv).length;
+  const fi=(t,f,ph="",stil="")=>`<input class="txt" id="tp-${esc(t.id)}-${f}" data-act="tp" data-id="${esc(t.id)}" data-f="${f}" value="${esc(t[f]||"")}" placeholder="${esc(ph)}" ${stil?`style="${stil}"`:""}>`;
+  return `<h2>Transport</h2><p class="sub">Transportørene her kan velges på ordre og kunder. Adressen brukes i feltet for transportør på CMR, og er «Krever CMR» krysset av, foreslås CMR × 3 for alle ordre med denne transportøren. Endringer lagres når du forlater feltet.</p>
+  <div class="toolbar"><button class="btn" data-act="nyTransport">Ny transportør</button></div>
+  ${S.nyTransport?`<form class="card form" id="nyTransportForm" style="margin-bottom:14px"><div class="row">
+    <label class="f">Navn<input class="txt" id="nt-navn" required placeholder="f.eks. Bring Cargo"></label>
+    <label class="f">Kontaktperson<input class="txt" id="nt-kontakt"></label>
+    <label class="f">Telefon<input class="txt" id="nt-telefon" inputmode="tel"></label>
+    <label class="f">E-post<input class="txt" id="nt-epost" inputmode="email"></label></div>
+    <label class="f">Adresse på CMR<textarea class="txt" id="nt-adresse" rows="2" placeholder="Firmanavn&#10;Gate, postnr. sted"></textarea></label>
+    <label class="chk"><input type="checkbox" id="nt-cmr"> Krever CMR</label>
+    <div class="actions"><button class="btn primary" type="submit">Legg til</button><button class="btn ghost" type="button" data-act="avbrytTransport">Avbryt</button></div></form>`:""}
+  <div class="tlist">${liste.map(t=>`<div class="card tcard ${t.aktiv===false?"inaktiv":""}">
+    <div class="row">
+      <label class="f">Navn${fi(t,"navn")}</label>
+      <label class="f">Kontaktperson${fi(t,"kontakt")}</label>
+      <label class="f">Telefon${fi(t,"telefon")}</label>
+      <label class="f">E-post${fi(t,"epost")}</label>
+    </div>
+    <label class="f">Adresse på CMR<textarea class="txt" rows="2" id="tp-${esc(t.id)}-adresse" data-act="tp" data-id="${esc(t.id)}" data-f="adresse" placeholder="Står tom: bare navnet brukes på CMR">${esc(t.adresse||"")}</textarea></label>
+    <div class="actions">
+      <label class="chk"><input type="checkbox" id="tp-${esc(t.id)}-cmr" data-act="tp" data-id="${esc(t.id)}" data-f="cmr" ${t.cmr?"checked":""}> Krever CMR</label>
+      <label class="chk"><input type="checkbox" id="tp-${esc(t.id)}-aktiv" data-act="tp" data-id="${esc(t.id)}" data-f="aktiv" ${t.aktiv!==false?"checked":""}> I bruk</label>
+      <span class="sp"></span><span class="hint">${bruk(t.navn)} kunder har denne som fast transport</span>
+    </div></div>`).join("")}</div>`;
+}
+function leggTilTransport(){
+  const g=id=>document.getElementById(id); const navn=g("nt-navn").value.trim();
+  if(!navn){ toast("Skriv navnet på transportøren."); return; }
+  if(S.transport.some(x=>x.navn.toLowerCase()===navn.toLowerCase())){ toast("Det finnes allerede en transportør med dette navnet."); return; }
+  let id=slug(navn)||"transport"; if(S.transport.some(x=>x.id===id)) id+="-"+Math.random().toString(36).slice(2,5);
+  const t={id, navn, kontakt:g("nt-kontakt").value.trim(), telefon:g("nt-telefon").value.trim(), epost:g("nt-epost").value.trim(), adresse:g("nt-adresse").value.trim(), cmr:g("nt-cmr").checked, merknad:"", aktiv:true, sort:S.transport.length};
+  S.nyTransport=false; lagreTransport(t).then(()=>toast(`${navn} er lagt til.`));
 }
 
 function visProdukter(){
@@ -329,6 +425,7 @@ function bindGlobalt(){
     e.preventDefault();
     if(e.target.id==="kundeForm") lagreKunde(e.target);
     if(e.target.id==="nyttProduktForm") leggTilProdukt();
+    if(e.target.id==="nyTransportForm") leggTilTransport();
   });
 }
 function byttUke(dager){ const d=new Date(S.ukeDato); d.setDate(d.getDate()+dager); S.ukeDato=d; S.open.clear(); abonnerUke(); render(); }
@@ -338,6 +435,9 @@ function klikk(e){
   const a=el.dataset.act, id=el.dataset.id;
   if(a==="toggle"){ if(e.target.closest("select,input,button:not([data-act=toggle])")) return; S.open.has(id)?S.open.delete(id):S.open.add(id); S.confirmDel=null; render(); }
   else if(a==="nyOrdre") nyOrdre(id);
+  else if(a==="wiLegg") leggInnWord();
+  else if(a==="wiAvbryt"){ S.wordImport=null; render(); }
+  else if(a==="pluss"||a==="minus"){ const o=finnOrdre(id); if(o) stegAntall(o,el.dataset.v,a==="pluss"?1:-1); }
   else if(a==="hentFaste") hentFaste();
   else if(a==="kopierForrige"){ el.disabled=true; kopierForrige().finally(()=>{ el.disabled=false; }); }
   else if(a==="tomUke"){ if(S.confirmTom){ S.confirmTom=false; tomUke(); } else { S.confirmTom=true; render(); setTimeout(()=>{ if(S.confirmTom){ S.confirmTom=false; render(); } },5000); } }
@@ -354,6 +454,8 @@ function klikk(e){
   else if(a==="nyKunde"){ S.kundeSel="__ny"; render(); }
   else if(a==="fjernFast"){ const k=kunde(S.kundeSel); if(k){ const n={...k,fast:{},fastFrekvens:"ingen"}; oppdaterKunde(n).then(()=>toast(`Fast ordre for ${k.navn} er fjernet.`)); } }
   else if(a==="nyttProdukt"){ S.nyttProdukt=true; render(); }
+  else if(a==="nyTransport"){ S.nyTransport=true; render(); setTimeout(()=>document.getElementById("nt-navn")?.focus(),30); }
+  else if(a==="avbrytTransport"){ S.nyTransport=false; render(); }
   else if(a==="loggInn") Store.loggInn();
   else if(a==="aapneOppsett"){ history.replaceState(null,"",location.pathname+"#oppsett"); S.fase="oppsett"; S.mangler=[]; S.importStatus=""; render(); }
   else if(a==="lastPaNytt") location.reload();
@@ -364,14 +466,21 @@ function klikk(e){
 }
 const finnOrdre = id => S.ordre.find(o=>o.id===id);
 
-function parseAntall(s,p){
-  s=String(s).trim().toLowerCase().replace(",",".");
+/* Tolker det som skrives i antallsfeltet og gir antall i salgsenheten.
+   9 · 1,5dp · 1dp+3 · 1 dp 3 · 3b (3 løse). I D-pak-visning betyr et rent tall D-pak. */
+function parseAntall(s,p,dpModus){
+  s=String(s).trim().toLowerCase().replace(/,/g,".").replace(/d-?pak|dpk/g,"dp").replace(/\s+/g," ");
   if(!s) return 0;
-  const m=s.match(/^(\d+(?:\.\d+)?)\s*(dp|d)?$/);
-  if(!m) return null;
-  let n=parseFloat(m[1]); if(m[2]) n*= (p?.perDP||1);
-  return Math.round(n*10)/10;
+  const per=p?.perDP>1 ? p.perDP : 1; let n;
+  let m=s.match(/^(\d+(?:\.\d+)?) ?(?:dp|d) ?\+? ?(\d+(?:\.\d+)?) ?(?:b|stk|beger|løse)?$/);
+  if(m) n=parseFloat(m[1])*per+parseFloat(m[2]);
+  else if((m=s.match(/^(\d+(?:\.\d+)?) ?(dp|d|b|stk|beger|løse)?$/))){
+    n=parseFloat(m[1]);
+    const enhet=m[2]; if(enhet==="dp"||enhet==="d"||(!enhet && dpModus)) n*=per;
+  } else return null;
+  return per>1 ? Math.round(n) : Math.round(n*10)/10;
 }
+function visAntall(a,o,p){ if(!a) return ""; return iDP(o,p) ? String(Math.round(a/p.perDP*100)/100).replace(".",",") : String(a).replace(".",","); }
 function endring(e){
   const t=e.target, a=t.dataset.act, id=t.dataset.id;
   if(t.id==="importFil" && t.files && t.files[0]){
@@ -382,13 +491,26 @@ function endring(e){
      .catch(err=>{ S.importStatus="Importen stoppet: "+(err.message||err); render(); });
     return;
   }
+  if(t.id==="wordFil" && t.files && t.files[0]){
+    const fil=t.files[0]; t.value="";
+    Word.tolk(fil, S.kunder, prod).then(w=>{ S.wordImport=w; render(); document.getElementById("wordImport")?.scrollIntoView({block:"start",behavior:"smooth"}); if(!w.rader.length) toast("Fant ingen bestillinger i Word-lista."); })
+      .catch(err=>toast("Klarte ikke å lese Word-fila: "+(err.message||err)));
+    return;
+  }
+  if(a==="wiKunde"){ const r=S.wordImport?.rader[+t.dataset.i]; if(r){ r.kundeId=t.value; if(t.value) Word.lagreValg(r.tekst,t.value); render(); } return; }
+  if(a==="wiMed"){ const r=S.wordImport?.rader[+t.dataset.i]; if(r){ r.med=t.checked; render(); } return; }
   if(a==="qty"){
-    const o=finnOrdre(id); if(!o) return; const p=prod(t.dataset.v); const n=parseAntall(t.value,p);
-    if(n===null){ toast("Skriv et tall, eller f.eks. 4dp for fire detaljistpakninger."); t.value=(o.linjer?.[t.dataset.v]?.antall)||""; return; }
-    const lin={...(o.linjer||{})};
-    if(n>0) lin[t.dataset.v]={...(lin[t.dataset.v]||{}), antall:n}; else delete lin[t.dataset.v];
-    t.dataset.keep="0"; t.value=n||"";
-    lagreOrdre({...o, linjer:lin});
+    const o=finnOrdre(id); if(!o) return; const p=prod(t.dataset.v); const n=parseAntall(t.value,p,iDP(o,p));
+    if(n===null){ toast("Skriv et tall. Eksempler: 9, 1,5dp, 1dp+3 eller 3b for tre løse."); t.value=visAntall(o.linjer?.[t.dataset.v]?.antall,o,p); return; }
+    settAntall(o,t.dataset.v,n);
+    t.dataset.keep="0"; t.value=visAntall(n,o,p);
+  } else if(a==="dpModus"){
+    const o=finnOrdre(id); if(!o) return; S.visDP.set(o.id, t.value==="dp"); render();
+  } else if(a==="tp"){
+    const tr=S.transport.find(x=>x.id===t.dataset.id); if(!tr) return; const f=t.dataset.f; const v=t.type==="checkbox"?t.checked:(f==="sort"?Number(t.value)||0:t.value.trim());
+    if(f==="navn"){ if(!v){ toast("Transportøren må ha et navn."); t.value=tr.navn; return; } if(S.transport.some(x=>x.id!==tr.id&&x.navn.toLowerCase()===v.toLowerCase())){ toast("Det finnes allerede en transportør med dette navnet."); t.value=tr.navn; return; } }
+    lagreTransport({...tr,[f]:v});
+    if(f==="navn" && tr.navn!==v) toast(`Endret navn. Kunder og ordre som har «${tr.navn}», beholder det gamle navnet til de endres.`);
   } else if(a==="batch"){
     const o=finnOrdre(id); if(!o) return; const lin={...(o.linjer||{})}; const v=t.dataset.v;
     if(lin[v]) lin[v]={...lin[v], batch:t.value.trim()}; lagreOrdre({...o, linjer:lin});
@@ -402,6 +524,16 @@ function endring(e){
   }
 }
 
+function settAntall(o,v,n){
+  const lin={...(o.linjer||{})};
+  if(n>0) lin[v]={...(lin[v]||{}), antall:n}; else delete lin[v];
+  lagreOrdre({...o, linjer:lin});
+}
+function stegAntall(o,v,retning){
+  const p=prod(v); const a=o.linjer?.[v]?.antall||0; const steg=iDP(o,p)?p.perDP:1;
+  const ny=Math.max(0, iDP(o,p) ? (retning>0 ? (Math.floor(a/steg+1e-9)+1)*steg : (Math.ceil(a/steg-1e-9)-1)*steg) : Math.round((a+retning*steg)*10)/10);
+  settAntall(o,v,ny);
+}
 function nyOrdre(kundeId){
   const k=kunde(kundeId); if(!k) return;
   const finnes=S.ordre.find(o=>o.kundeId===kundeId);
@@ -548,7 +680,7 @@ async function cmr(o){
   set("Sender",`${AVSENDER.navn}\n${AVSENDER.adresse}, ${AVSENDER.postnr} Namsos - NORWAY`,9);
   set("Consignee",adrTekst,9);
   set("Place",adrTekst,9);
-  set("Carrier",TRANSPORT_ADR[o.transport]||o.transport||"",9);
+  set("Carrier",transportAdresse(o.transport),9);
   const dato=o.sendes||iDag();
   set("Place and date",`${AVSENDER.hentested}, ${dmy(dato)}`,9);
   const col=(fn)=>ls.map(fn).join("\n");

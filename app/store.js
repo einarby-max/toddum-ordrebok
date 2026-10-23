@@ -10,14 +10,16 @@ const Store = (() => {
     kunder: { navn: "Ordrebok Kunder", nokkel: "id", kol: [
       ["navn",T],["kundenr",T],["orgnr",T],["adresse",T],["adresse2",T],["postnr",T],["poststed",T],["land",T],["epost",T],["telefon",T],
       ["kontakt",T],["kontaktEpost",T],["kontaktTlf",T],["levNavn",T],["levAdresse",M],["transport",T],["cmr",B],["leveringsdag",T],
-      ["merknad",M],["instruks",M],["fastFrekvens",T],["fast",J],["inaktiv",B],["priser",J] ] },
+      ["merknad",M],["instruks",M],["fastFrekvens",T],["fast",J],["inaktiv",B],["priser",J],["antallI",T] ] },
+    transport: { navn: "Ordrebok Transport", nokkel: "id", valgfri: true, kol: [
+      ["navn",T],["adresse",M],["kontakt",T],["telefon",T],["epost",T],["cmr",B],["merknad",M],["aktiv",B],["sort",N] ] },
     ordre: { navn: "Ordrebok Ordre", nokkel: "id", kol: [
       ["uke",T,{indexed:true}],["kundeId",T],["kundeNavn",T],["linjer",J],["transport",T],["sendes",T],["prodDato",T],["bestnr",T],
       ["merknad",M],["status",T],["kilde",T],["opprettet",T],["endret",T] ] },
   };
   const SCOPES = ["Sites.Manage.All"];
   let app, konto, siteId;
-  const listeId = {}, spId = { produkter:{}, kunder:{}, ordre:{} }, kjeder = {};
+  const listeId = {}, spId = { produkter:{}, kunder:{}, ordre:{}, transport:{} }, kjeder = {};
 
   function basisUrl(){ return location.origin + location.pathname.replace(/[^/]*$/, ""); }
   function feil(melding, status, kode){ const e = new Error(melding); e.status = status; e.code = kode; return e; }
@@ -37,7 +39,14 @@ const Store = (() => {
     const site = await g("GET", `/sites/${C.siteHost}:${C.sitePath}?$select=id,displayName`);
     siteId = site.id;
     const mangler = await finnLister();
-    if(!mangler.length) await sikreKolonner().catch(e => console.warn("Kunne ikke legge til nye kolonner", e));
+    if(!mangler.length){
+      /* Lister som kom i senere versjoner (f.eks. transport) opprettes automatisk. */
+      for(const [k, def] of Object.entries(LISTER)) if(def.valgfri && !listeId[k]){
+        try { const l = await g("POST", `/sites/${siteId}/lists`, { displayName: def.navn, list: { template: "genericList" }, columns: def.kol.map(kolonne) }); listeId[k] = l.id; }
+        catch(e){ console.warn("Kunne ikke opprette " + def.navn, e); }
+      }
+      await sikreKolonner().catch(e => console.warn("Kunne ikke legge til nye kolonner", e));
+    }
     return { tilstand: mangler.length ? "oppsett" : "klar", mangler, bruker: { navn: konto.name || konto.username, epost: konto.username } };
   }
   const loggInn = () => app.loginRedirect({ scopes: SCOPES, prompt: "select_account" });
@@ -77,13 +86,14 @@ const Store = (() => {
     const mangler = [];
     for(const [k, def] of Object.entries(LISTER)){
       const l = j.value.find(x => x.displayName === def.navn);
-      if(l) listeId[k] = l.id; else mangler.push(k);
+      if(l) listeId[k] = l.id; else if(!def.valgfri) mangler.push(k);
     }
     return mangler;
   }
   /* Nye felt i senere versjoner (f.eks. pris) legges til i eksisterende lister. */
   async function sikreKolonner(){
     for(const [k, def] of Object.entries(LISTER)){
+      if(!listeId[k]) continue;
       const j = await g("GET", `/sites/${siteId}/lists/${listeId[k]}/columns?$select=name&$top=999`);
       const finnes = new Set(j.value.map(c => c.name));
       for(const kol of def.kol) if(!finnes.has(kol[0])) await g("POST", `/sites/${siteId}/lists/${listeId[k]}/columns`, kolonne(kol));
@@ -130,6 +140,7 @@ const Store = (() => {
   }
 
   async function hent(k, uke){
+    if(!listeId[k]) return [];
     let url = `/sites/${siteId}/lists/${listeId[k]}/items?$expand=fields&$top=999`;
     if(uke) url += `&$filter=fields/uke eq '${encodeURIComponent(uke)}'`;
     const ut = [];
@@ -168,7 +179,8 @@ const Store = (() => {
     await Promise.all([arbeider(), arbeider(), arbeider(), arbeider()]);
     return { ferdig, hoppetOver };
   }
-  async function eksporter(){ const [produkter, kunder, ordre] = await Promise.all([hent("produkter"), hent("kunder"), hent("ordre")]); return { eksportert: new Date().toISOString(), produkter, kunder, ordre }; }
+  async function eksporter(){ const [produkter, kunder, ordre, transport] = await Promise.all([hent("produkter"), hent("kunder"), hent("ordre"), hent("transport")]); return { eksportert: new Date().toISOString(), produkter, kunder, ordre, transport }; }
+  const harListe = k => !!listeId[k];
 
-  return { init, loggInn, loggUt, opprettLister, hent, lagre, slett, importer, eksporter, LISTER };
+  return { init, loggInn, loggUt, opprettLister, hent, lagre, slett, importer, eksporter, harListe, LISTER };
 })();
