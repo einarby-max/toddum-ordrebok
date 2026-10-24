@@ -825,12 +825,14 @@ async function lastNedUnimicro(){
   if(utenPris.size){ toast(`Mangler pris på ${[...utenPris].join(", ")}. Legg inn pris under Produkter.`); return; }
   try { await lastSkript("vendor/xlsx.mini.min.js"); } catch(e){ toast("Klarte ikke å laste Excel-modulen. Sjekk nettforbindelsen."); return; }
   const H=["Ordrenr","Ordredato","Leveringsdato","Kundenr","Kundenavn","Vår referanse","Deres referanse","Hovedselger","Rekvisisjon","Leveringsadr.","Lev.postnr.","Lev.poststed","Varenr.","Varenavn","Antall","Pris eks. mva","Rabatt %","Prosjekt","Avdeling"];
-  const idag=dmyLang(new Date().toISOString().slice(0,10)); const rader=[H];
+  /* Unimicro krever datoformat ddMMyy, f.eks. 241026 */
+  const ddmmyy=iso=>{ if(!iso) return ""; const [y,m,d]=iso.split("-"); return d+m+y.slice(2); };
+  const idag=ddmmyy(iDag()); const rader=[H];
   ordre.forEach((o,i)=>{
     const k=kunde(o.kundeId); const nr=`${String(u.y).slice(2)}${pad(u.w)}${pad(i+1)}`;
     let adr=k.adresse||"", pnr=k.postnr||"", sted=k.poststed||"";
     if(k.levAdresse){ const l=k.levAdresse.split(/\n|,/).map(x=>x.trim()).filter(Boolean); const m=(l[l.length-1]||"").match(/^(\d{4})\s+(.+)$/); if(m){ pnr=m[1]; sted=m[2]; adr=l.slice(0,-1).join(", "); } else adr=l.join(", "); }
-    linjer(o).forEach(l=>rader.push([nr, idag, dmyLang(o.sendes||o.prodDato||""), Number(k.kundenr), k.navn, AVSENDER.ref, k.kontakt||"", "", o.bestnr||"", adr, pnr, sted, l.varenr, l.p?.navn||l.p?.kort||l.varenr, l.antall, prisFor(k,l.varenr), "", "", ""]));
+    linjer(o).forEach(l=>rader.push([nr, idag, ddmmyy(o.sendes||o.prodDato||iDag()), Number(k.kundenr), k.navn, AVSENDER.ref, k.kontakt||"", "", o.bestnr||"", adr, pnr, sted, l.varenr, l.p?.navn||l.p?.kort||l.varenr, l.antall, prisFor(k,l.varenr), "", "", ""]));
   });
   const ws=XLSX.utils.aoa_to_sheet(rader);
   for(let r=1;r<rader.length;r++){ for(const c of [0,1,2,12]){ const ref=XLSX.utils.encode_cell({r,c}); if(ws[ref]){ ws[ref].t="s"; ws[ref].v=String(ws[ref].v); ws[ref].z="@"; } } }
