@@ -815,7 +815,7 @@ function lesPriser(t){ const o={}; for(const del of String(t||"").split(/[;\n]+/
 function prisFor(k,varenr){ const kp=k?.priser?.[varenr]; if(kp>0) return kp; const p=prod(varenr); return p?.pris>0 ? p.pris : null; }
 function lastSkript(src){ return new Promise((ok,nei)=>{ if(window.XLSX) return ok(); const s=document.createElement("script"); s.src=src; s.onload=ok; s.onerror=()=>nei(new Error("Fant ikke "+src)); document.head.appendChild(s); }); }
 /* Ordre til Unimicro: én rad per varelinje, kolonner som i Unimicros importmal (OrderTemplate.xlsx).
-   Ordrenr lages som ÅÅUU + løpenr (uke 43 i 2026 gir 264301, 264302 …). */
+   Ordrenr lages som siste siffer i året + uke + løpenr (uke 43 i 2026 gir 64301, 64302 …), innenfor Unimicros ordreserie 1–199 999. */
 async function lastNedUnimicro(){
   const u=uke();
   const ordre=[...S.ordre].filter(o=>(o.status||"ny")!=="fakturert" && linjer(o).length).sort((a,b)=>(a.kundeNavn||"").localeCompare(b.kundeNavn||"","nb"));
@@ -829,7 +829,7 @@ async function lastNedUnimicro(){
   const ddmmyy=iso=>{ if(!iso) return ""; const [y,m,d]=iso.split("-"); return d+m+y.slice(2); };
   const idag=ddmmyy(iDag()); const rader=[H];
   ordre.forEach((o,i)=>{
-    const k=kunde(o.kundeId); const nr=`${String(u.y).slice(2)}${pad(u.w)}${pad(i+1)}`;
+    const k=kunde(o.kundeId); const nr=String((u.y%10)*10000+u.w*100+i+1);   /* f.eks. 64301 = 2026 uke 43 nr. 1. Unimicros ordreserie går til 199 999. */
     let adr=k.adresse||"", pnr=k.postnr||"", sted=k.poststed||"";
     if(k.levAdresse){ const l=k.levAdresse.split(/\n|,/).map(x=>x.trim()).filter(Boolean); const m=(l[l.length-1]||"").match(/^(\d{4})\s+(.+)$/); if(m){ pnr=m[1]; sted=m[2]; adr=l.slice(0,-1).join(", "); } else adr=l.join(", "); }
     linjer(o).forEach(l=>rader.push([nr, idag, ddmmyy(o.sendes||o.prodDato||iDag()), Number(k.kundenr), k.navn, AVSENDER.ref, k.kontakt||"", "", o.bestnr||"", adr, pnr, sted, l.varenr, l.p?.navn||l.p?.kort||l.varenr, l.antall, prisFor(k,l.varenr), "", "", ""]));
