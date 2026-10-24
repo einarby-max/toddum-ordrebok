@@ -111,7 +111,8 @@ label.chk{display:flex;align-items:center;gap:8px;font-size:14px}
 .line .qty input{width:56px;height:34px;text-align:right;border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:5px 6px;font-variant-numeric:tabular-nums}
 .modus{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .seg{position:relative;font-size:13px}
-.seg input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.seg input{position:absolute;opacity:0;inset:0;margin:0;width:100%;height:100%;cursor:pointer;-webkit-appearance:none;appearance:none;-webkit-tap-highlight-color:transparent;outline:none}
+.seg{-webkit-tap-highlight-color:transparent}
 .seg span{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:4px 12px;background:var(--surface);font-weight:600}
 .seg input:checked + span{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
 .seg input:focus-visible + span{outline:2px solid var(--focus);outline-offset:2px}
@@ -196,11 +197,11 @@ table.grid tr.sel td{background:var(--sunk)}
   <div class="empty"><h3>Starter ordreboka …</h3>Kobler til Microsoft 365.</div>
 </main>
 <div class="toast" id="toast" hidden></div>
-<script src="config.js?v=11"></script>
+<script src="config.js?v=12"></script>
 <script src="vendor/msal-browser.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="store.js?v=11"></script>
-<script src="word.js?v=11"></script>
-<script src="app.js?v=11"></script>
+<script src="store.js?v=12"></script>
+<script src="word.js?v=12"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>
