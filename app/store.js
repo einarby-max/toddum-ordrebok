@@ -13,13 +13,21 @@ const Store = (() => {
       ["merknad",M],["instruks",M],["fastFrekvens",T],["fast",J],["inaktiv",B],["priser",J],["antallI",T] ] },
     transport: { navn: "Ordrebok Transport", nokkel: "id", valgfri: true, kol: [
       ["navn",T],["adresse",M],["kontakt",T],["telefon",T],["epost",T],["cmr",B],["merknad",M],["aktiv",B],["sort",N],["nettside",T] ] },
+    melk: { navn: "Ordrebok Melkehenting", nokkel: "id", valgfri: true, kol: [
+      ["tid",T],["dato",T],["liter",N],["temp",T],["hentetAv",T],["bilde",M],["ystingId",T],["merknad",M] ] },
+    ysting: { navn: "Ordrebok Ysting", nokkel: "id", valgfri: true, kol: [
+      ["dato",T],["uke",T],["lot",T],["status",T],["melkLiter",N],["melkIds",J],["flote",N],["tid",J],["personer",N],["minutter",N],["minutterManuelt",B],
+      ["kontroller",J],["produsert",J],["esker",N],["svinnKg",N],["merknad",M],["registrertAv",T],["endret",T] ] },
+    temperatur: { navn: "Ordrebok Temperatur", nokkel: "id", valgfri: true, kol: [
+      ["fra",T],["til",T],["filnavn",T],["antall",N],["min",N],["max",N],["over",N],["data",J],["lastetOpp",T],["av",T] ] },
+    innst: { navn: "Ordrebok Innstillinger", nokkel: "id", valgfri: true, kol: [ ["data",J] ] },
     ordre: { navn: "Ordrebok Ordre", nokkel: "id", kol: [
       ["uke",T,{indexed:true}],["kundeId",T],["kundeNavn",T],["linjer",J],["transport",T],["sendes",T],["prodDato",T],["bestnr",T],
       ["merknad",M],["status",T],["kilde",T],["opprettet",T],["endret",T] ] },
   };
   const SCOPES = ["Sites.Manage.All"];
   let app, konto, siteId;
-  const listeId = {}, spId = { produkter:{}, kunder:{}, ordre:{}, transport:{} }, kjeder = {};
+  const listeId = {}, spId = { produkter:{}, kunder:{}, ordre:{}, transport:{}, melk:{}, ysting:{}, temperatur:{}, innst:{} }, kjeder = {};
 
   function basisUrl(){ return location.origin + location.pathname.replace(/[^/]*$/, ""); }
   function feil(melding, status, kode){ const e = new Error(melding); e.status = status; e.code = kode; return e; }
@@ -179,8 +187,19 @@ const Store = (() => {
     await Promise.all([arbeider(), arbeider(), arbeider(), arbeider()]);
     return { ferdig, hoppetOver };
   }
+  /* Laster opp en fil (f.eks. bilde av melketanken) til dokumentbiblioteket i Toddum-området. Mapper lages automatisk. */
+  async function lastOppFil(sti, blob){
+    const t = await token();
+    const url = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root:/${sti.split("/").map(encodeURIComponent).join("/")}:/content?@microsoft.graph.conflictBehavior=rename`;
+    let svar;
+    try { svar = await fetch(url, { method: "PUT", headers: { Authorization: "Bearer " + t, "Content-Type": blob.type || "application/octet-stream" }, body: blob }); }
+    catch(_) { throw feil("Ingen kontakt med Microsoft 365. Sjekk nettforbindelsen.", 0, "nett"); }
+    const j = await svar.json().catch(() => null);
+    if(!svar.ok) throw feil(j?.error?.message || svar.statusText, svar.status, j?.error?.code);
+    return { url: j.webUrl, id: j.id };
+  }
   async function eksporter(){ const [produkter, kunder, ordre, transport] = await Promise.all([hent("produkter"), hent("kunder"), hent("ordre"), hent("transport")]); return { eksportert: new Date().toISOString(), produkter, kunder, ordre, transport }; }
   const harListe = k => !!listeId[k];
 
-  return { init, loggInn, loggUt, opprettLister, hent, lagre, slett, importer, eksporter, harListe, LISTER };
+  return { init, loggInn, loggUt, opprettLister, hent, lagre, slett, importer, eksporter, harListe, lastOppFil, LISTER };
 })();

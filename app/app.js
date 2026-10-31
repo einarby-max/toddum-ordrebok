@@ -98,6 +98,7 @@ async function lastAlt(){
   S.produkter=p; S.kunder=k.sort((a,b)=>a.navn.localeCompare(b.navn,"nb")); S.loaded.p=S.loaded.k=true;
   settTransport(t);
   await hentUke();
+  Prod.last();
   if(!S.pollT){ S.pollT=setInterval(poll,20000); document.addEventListener("visibilitychange",()=>{ if(!document.hidden) poll(); }); }
 }
 function settTransport(liste){
@@ -121,6 +122,7 @@ async function poll(){
   if(document.hidden || S.fase!=="klar" || S.pending) return;
   S.pollN++;
   await hentUke();
+  Prod.poll();
   if(S.pollN%6===0 && S.tab!=="kunder" && S.tab!=="produkter"){
     try{ const [p,k]=await Promise.all([Store.hent("produkter"),Store.hent("kunder")]); S.produkter=p; S.kunder=k.sort((a,b)=>a.navn.localeCompare(b.navn,"nb")); if(S.tab!=="transport"){ const t=await Store.hent("transport"); if(t.length) S.transport=t; } planRender(); }catch(_){}
   }
@@ -144,6 +146,7 @@ function render(){
   else if(S.tab==="ysteri") main.innerHTML=visYsteri();
   else if(S.tab==="kunder") main.innerHTML=visKunder();
   else if(S.tab==="transport") main.innerHTML=visTransport();
+  else if(S.tab==="prod") main.innerHTML=Prod.vis();
   else main.innerHTML=visProdukter();
   gjenopprettUtkast();
   if(fid){ const el=document.getElementById(fid); if(el && el!==document.activeElement){ if(fval!=null && el.value!==fval && el.dataset.keep!=="0") el.value=fval; el.focus(); try{ if(fsel) el.setSelectionRange(fsel[0],fsel[1]); }catch(_){} } }
@@ -467,10 +470,11 @@ function bindGlobalt(){
       else if(e.key==="Enter" && sug[S.sugIdx]){ nyOrdre(sug[S.sugIdx].id); e.preventDefault(); }
       else if(e.key==="Escape"){ S.leggTil=""; render(); }
     }
-    if(e.key==="Enter" && (e.target.dataset.act==="qty"||e.target.dataset.act==="batch")){ e.target.blur(); }
+    if(e.key==="Enter" && (e.target.dataset.act==="qty"||e.target.dataset.act==="batch"||e.target.dataset.pp||e.target.dataset.pf&&e.target.tagName==="INPUT")){ e.target.blur(); }
   });
   main.addEventListener("submit", e=>{
     e.preventDefault();
+    if(Prod.submit(e.target)) return;
     if(e.target.id==="kundeForm") lagreKunde(e.target);
     if(e.target.id==="nyttProduktForm") leggTilProdukt();
     if(e.target.id==="transportForm") lagreTransportSkjema(e.target);
@@ -480,6 +484,7 @@ function byttUke(dager){ const d=new Date(S.ukeDato); d.setDate(d.getDate()+dage
 
 function klikk(e){
   const el=e.target.closest("[data-act]"); if(!el) return;
+  if(Prod.klikk(el)) return;
   const a=el.dataset.act, id=el.dataset.id;
   if(a==="toggle"){ if(e.target.closest("select,input,button:not([data-act=toggle])")) return; S.open.has(id)?S.open.delete(id):S.open.add(id); S.confirmDel=null; render(); }
   else if(a==="nyOrdre") nyOrdre(id);
@@ -532,6 +537,7 @@ function parseAntall(s,p,dpModus){
 }
 function visAntall(a,o,p){ if(!a) return ""; return iDP(o,p) ? String(Math.round(a/p.perDP*100)/100).replace(".",",") : String(a).replace(".",","); }
 function endring(e){
+  if(Prod.endring(e)) return;
   const t=e.target, a=t.dataset.act, id=t.dataset.id;
   if(t.id==="importFil" && t.files && t.files[0]){
     const fil=t.files[0];
