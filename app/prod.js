@@ -6,11 +6,27 @@ const Prod = (() => {
   const SATSER = {
     melkKrL: 8, floteKrL: 65.23, timeKr: 294.97,
     batchKr: 728.4,           // løpe 41,8 + kalsiumklorid 12,8 + kultur 448,8 + frakt 75 + vaskemiddel 150 (strøm og vann regnes for seg)
-    kWh: 218, nettleieKr: 0.45, stromReserve: 1.1, vannKrM3: 0, omrade: "NO3",
+    kWh: 218, nettleieKr: 0.31, stromReserve: 1.1, vannKrM3: 0, omrade: "NO3",
     tempGrense: 4, melkTempGrense: 4,
     emb: { "0001":4.21, "0002":22.97, "0010":4.21, "0011":22.97, "0020":4.21, "0022":22.97, "0009":4.21, "0008":10.73, "0041":34.71, "0031":7.88, "0030":22.97, "0032":0, "0042":8.19 },
     modell: { "0001":14.52, "0002":232.2, "0010":16.76, "0011":190.5, "0020":44.73, "0022":437.76, "0030":290.55, "0031":31.97, "0009":46.7, "0008":89.46, "0041":660.05, "0032":88.96, "0042":133.29 },
   };
+  /* Strøm per måned fra NTE-fakturaene (målepunkt 707057500065627076, eks. mva) og solcelleproduksjon avlest i SolisCloud 31.10.2026 (ca., lest av grafen).
+     nett = kjøpt fra nettet (kWh), solgt = innmating (kWh), sol = produsert (kWh), kr = strøm + nettleie (kr eks. mva). Oppdateres når nye fakturaer kommer. */
+  const ENERGI = [
+    { mnd: "2025-12", nett: 9480, spot: 0.610, solgt: 0, sol: null, kap: "50–75", kapKr: 2856, kr: 12363 },
+    { mnd: "2026-01", nett: 12157, spot: 1.293, solgt: 0, sol: 150, kap: "75–100", kapKr: 3750, kr: 23413 },
+    { mnd: "2026-02", nett: 10461, spot: 1.254, solgt: 4, sol: 630, kap: "75–100", kapKr: 3750, kr: 20242 },
+    { mnd: "2026-03", nett: 8817, spot: 0.815, solgt: 349, sol: 1780, kap: "75–100", kapKr: 3750, kr: 13499 },
+    { mnd: "2026-04", nett: 7906, spot: 1.095, solgt: 732, sol: 3230, kap: "75–100", kapKr: 3750, kr: 14075 },
+    { mnd: "2026-05", nett: 6576, spot: 0.826, solgt: 783, sol: 3320, kap: "75–100", kapKr: 3750, kr: 10603 },
+    { mnd: "2026-06", nett: 6826, spot: 0.652, solgt: 836, sol: 2870, kap: "75–100", kapKr: 3750, kr: 9886 },
+    { mnd: "2026-07", nett: 6698, spot: 0.763, solgt: 678, sol: 2790, kap: "75–100", kapKr: 3937, kr: 10629 },
+    { mnd: "2026-08", nett: 6783, spot: 1.032, solgt: 411, sol: 2100, kap: "75–100", kapKr: 3937, kr: 12717 },
+    { mnd: "2026-09", nett: 6417, spot: 1.084, solgt: 510, sol: 1880, kap: "100–150", kapKr: 5698, kr: 14229 },
+    { mnd: "2026-10", nett: null, spot: null, solgt: null, sol: 1004, kap: "", kapKr: null, kr: null },
+  ];
+  const SOL = { kWp: 28.475, totalt: 64682, iÅr: 19918, fra: "desember 2023" };
   const ÅRSAK = ["Utgått dato", "Skadet eller lekk", "Kvalitet", "Smaking og prøver", "Annet"];
   const KONTROLL = ["Pasteurisering °C", "Pasteurisering tid (s)", "pH", "Melketemperatur °C", "Ostemasse kg", "Annet"];
   const P = () => S.pr || (S.pr = { pv: "oversikt", ystinger: [], melk: [], temp: [], svinn: [], spot: {}, spotRaw: {}, alleOrdre: null, innst: null, edit: null, loaded: false, laster: false, tempValg: 7, tempForslag: null, melkBilde: null, melkBildeUrl: "", lagrerT: null, feilTilgang: false });
@@ -179,7 +195,7 @@ const Prod = (() => {
     const W = 640, H = høyde, L = 40, B = 22, T = 8, n = etiketter.length, maks = Math.max(1, ...serier.flatMap(s => s.v));
     const bw = (W - L - 6) / n, gw = bw * 0.8 / serier.length;
     const Y = v => T + (1 - v / maks) * (H - T - B);
-    const steg = Math.pow(10, Math.floor(Math.log10(maks))) * (maks / Math.pow(10, Math.floor(Math.log10(maks))) > 5 ? 2 : 1);
+    const rå = maks / 4, mag = Math.pow(10, Math.floor(Math.log10(rå))), steg = [1, 2, 5, 10].find(m => m * mag >= rå) * mag;
     let g = ""; for (let v = 0; v <= maks; v += steg) g += `<line x1="${L}" x2="${W}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${L - 6}" y="${Y(v) + 4}" font-size="11" text-anchor="end" fill="var(--muted)">${nf(v)}</text>`;
     etiketter.forEach((e, i) => { g += `<text x="${L + bw * i + bw / 2}" y="${H - 6}" font-size="11" text-anchor="middle" fill="var(--muted)">${esc(e)}</text>`; serier.forEach((s, j) => { const v = s.v[i] || 0; g += `<rect x="${L + bw * i + bw * 0.1 + gw * j}" y="${Y(v)}" width="${gw - 1}" height="${Math.max(0, H - B - Y(v))}" fill="${s.farge}" rx="2"><title>${esc(s.navn)}: ${nf(v, 1)}</title></rect>`; }); });
     return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" role="img">${g}</svg><div class="actions" style="gap:14px;margin-top:4px">${serier.map(s => `<span class="hint"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${s.farge};margin-right:5px"></span>${esc(s.navn)}</span>`).join("")}</div>`;
@@ -213,7 +229,31 @@ const Prod = (() => {
     <div class="tablewrap" style="margin-top:16px"><table class="grid"><thead><tr><th>Uke</th><th class="n">Ordre</th><th class="n">Kg bestilt</th><th class="n">Ystinger</th><th class="n">Melk (l)</th><th class="n">Kg produsert</th><th class="n">Timer</th><th class="n">Kr/kg</th><th class="n">Svinn (kg)</th></tr></thead><tbody>
     ${uker.map((u, i) => { const r = R[i]; return `<tr><td>Uke ${u.w}</td><td class="n">${nf(r.ordre)}</td><td class="n">${nf(r.kgBestilt)}</td><td class="n">${nf(r.ystinger)}</td><td class="n">${nf(r.melk)}</td><td class="n">${nf(r.kg)}</td><td class="n">${nf(r.timer, 1)}</td><td class="n">${r.kg ? nf(Math.round(r.kost / r.kg)) : "–"}</td><td class="n">${nf(r.svinnKg, 1)}</td></tr>`; }).reverse().join("")}
     </tbody><tfoot><tr><td>Sum</td><td class="n">${nf(sum(r => r.ordre))}</td><td class="n">${nf(sum(r => r.kgBestilt))}</td><td class="n">${nf(sum(r => r.ystinger))}</td><td class="n">${nf(sum(r => r.melk))}</td><td class="n">${nf(sum(r => r.kg))}</td><td class="n">${nf(sum(r => r.timer), 1)}</td><td class="n">${sum(r => r.kg) ? nf(Math.round(sum(r => r.kost) / sum(r => r.kg))) : "–"}</td><td class="n">${nf(sum(r => r.svinnKg), 1)}</td></tr></tfoot></table></div>
-    <p class="hint">Strømpris: <a href="https://www.hvakosterstrommen.no" target="_blank" rel="noopener">hvakosterstrommen.no</a>, spotpris for ${esc(s.omrade)} uten mva og nettleie. Strømmen solcellene produserer, er ikke trukket fra ennå.</p>`;
+    ${visEnergi()}
+    <p class="hint">Strømpris: <a href="https://www.hvakosterstrommen.no" target="_blank" rel="noopener">hvakosterstrommen.no</a>, spotpris for ${esc(s.omrade)} uten mva og nettleie.</p>`;
+  }
+
+  function visEnergi() {
+    const s = sats(), M = ["jan","feb","mar","apr","mai","jun","jul","aug","sep","okt","nov","des"];
+    const rader = ENERGI.map(e => { const egen = e.sol != null && e.solgt != null ? Math.max(0, e.sol - e.solgt) : null; const tot = e.nett != null && egen != null ? e.nett + egen : null; return { ...e, egen, tot, andel: tot ? egen / tot : null, spart: egen != null && e.spot != null ? egen * (e.spot + s.nettleieKr) + e.solgt * e.spot : null }; });
+    const iÅr = rader.filter(r => r.mnd.startsWith("2026") && r.spart != null), sum = f => iÅr.reduce((a, r) => a + (f(r) || 0), 0);
+    const andel = sum(r => r.egen) / sum(r => r.tot);
+    const lab = r => { const [y, m] = r.mnd.split("-"); return M[+m - 1] + (m === "01" ? " " + y.slice(2) : ""); };
+    const vis = rader.filter(r => r.nett != null);
+    return `<div class="card form" style="margin-top:16px"><h3>Energi i ysteriet</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px">
+        <div class="card" style="padding:12px 14px"><div class="hint">Solcellene i 2026</div><div style="font-family:var(--f-display);font-size:26px">${nf(SOL.iÅr)} kWh</div><div class="hint">${nf(SOL.kWp, 1)} kWp · ${nf(SOL.totalt / 1000, 1)} MWh siden ${SOL.fra}</div></div>
+        <div class="card" style="padding:12px 14px"><div class="hint">Strøm vi lager selv</div><div style="font-family:var(--f-display);font-size:26px">ca. ${nf(andel * 100)} %</div><div class="hint">av alt ysteriet bruker, jan–sep 2026</div></div>
+        <div class="card" style="padding:12px 14px"><div class="hint">Spart og solgt jan–sep</div><div style="font-family:var(--f-display);font-size:26px">ca. ${nf(Math.round(sum(r => r.spart) / 1000))} 000 kr</div><div class="hint">${nf(sum(r => r.egen))} kWh brukt selv · ${nf(sum(r => r.solgt))} kWh solgt</div></div>
+        <div class="card" style="padding:12px 14px"><div class="hint">Strøm og nettleie jan–sep</div><div style="font-family:var(--f-display);font-size:26px">${nf(Math.round(sum(r => r.kr) / 1000))} 000 kr</div><div class="hint">eks. mva, fra NTE-fakturaene</div></div>
+      </div>
+      ${søyler([{ navn: "Kjøpt fra nettet (kWh)", farge: "var(--sage)", v: vis.map(r => r.nett) }, { navn: "Solceller brukt selv (kWh)", farge: "#E8B93A", v: vis.map(r => r.egen || 0) }, { navn: "Solgt til nettet (kWh)", farge: "var(--accent)", v: vis.map(r => r.solgt || 0) }], vis.map(lab), 200)}
+      <div class="tablewrap" style="margin-top:10px"><table class="grid"><thead><tr><th>Måned</th><th class="n">Kjøpt (kWh)</th><th class="n">Sol produsert</th><th class="n">Brukt selv</th><th class="n">Solgt</th><th class="n">Andel sol</th><th class="n">Spot (kr/kWh)</th><th>Effekttrinn</th><th class="n">Strøm + nettleie</th></tr></thead><tbody>
+      ${[...rader].reverse().map(r => `<tr><td>${lab(r)}</td><td class="n">${r.nett != null ? nf(r.nett) : "–"}</td><td class="n">${r.sol != null ? "ca. " + nf(r.sol) : "–"}</td><td class="n">${r.egen != null ? nf(r.egen) : "–"}</td><td class="n">${r.solgt != null ? nf(r.solgt) : "–"}</td><td class="n">${r.andel != null ? nf(r.andel * 100) + " %" : "–"}</td><td class="n">${r.spot != null ? nf(r.spot, 2) : "–"}</td><td>${r.kap ? r.kap + " kW · " + nf(r.kapKr) + " kr" : "–"}</td><td class="n">${r.kr != null ? nf(r.kr) + " kr" : "–"}</td></tr>`).join("")}
+      </tbody></table></div>
+      <p class="hint"><b>Effekttrinn:</b> Nettleien har et fast beløp etter den høyeste timen hver måned. I september passerte ysteriet 100 kW og havnet i trinnet 100–150 kW. Det kostet ca. 1 760 kr mer enn trinnet under. Unngå å kjøre pasteurisering, oppvask og varmtvann på full effekt samtidig.</p>
+      <p class="hint">Kilder: NTE-fakturaer des. 2025–sep. 2026 (eks. mva) og SolisCloud (produksjon per måned lest av grafen 31.10.2026, derfor «ca.»). «Brukt selv» = produsert − solgt. «Spart» = brukt selv × (spot + nettleie og avgifter ${nf(s.nettleieKr, 2)} kr) + solgt × spot.</p>
+    </div>`;
   }
   function strømGraf(raw) {
     const W = 640, H = 170, L = 40, B = 22, T = 8, v = raw.map(x => x.NOK_per_kWh), maks = Math.max(0.5, ...v) * 1.1, n = raw.length;
