@@ -17,7 +17,10 @@ const Store = (() => {
       ["tid",T],["dato",T],["liter",N],["temp",T],["hentetAv",T],["bilde",M],["ystingId",T],["merknad",M] ] },
     ysting: { navn: "Ordrebok Ysting", nokkel: "id", valgfri: true, kol: [
       ["dato",T],["uke",T],["lot",T],["status",T],["melkLiter",N],["melkIds",J],["flote",N],["tid",J],["personer",N],["minutter",N],["minutterManuelt",B],
-      ["kontroller",J],["produsert",J],["esker",N],["svinnKg",N],["merknad",M],["registrertAv",T],["endret",T] ] },
+      ["kontroller",J],["produsert",J],["esker",N],["svinnKg",N],["merknad",M],["registrertAv",T],["endret",T],
+      ["ostemasseKg",N],["overfortUtKg",N],["overfortInn",J],["vannStart",N],["vannSlutt",N],["strompris",N] ] },
+    svinn: { navn: "Ordrebok Svinn", nokkel: "id", valgfri: true, kol: [
+      ["dato",T],["varenr",T],["antall",N],["arsak",T],["lot",T],["merknad",M],["av",T] ] },
     temperatur: { navn: "Ordrebok Temperatur", nokkel: "id", valgfri: true, kol: [
       ["fra",T],["til",T],["filnavn",T],["antall",N],["min",N],["max",N],["over",N],["data",J],["lastetOpp",T],["av",T] ] },
     innst: { navn: "Ordrebok Innstillinger", nokkel: "id", valgfri: true, kol: [ ["data",J] ] },
@@ -27,7 +30,7 @@ const Store = (() => {
   };
   const SCOPES = ["Sites.Manage.All"];
   let app, konto, siteId;
-  const listeId = {}, spId = { produkter:{}, kunder:{}, ordre:{}, transport:{}, melk:{}, ysting:{}, temperatur:{}, innst:{} }, kjeder = {};
+  const listeId = {}, spId = { produkter:{}, kunder:{}, ordre:{}, transport:{}, melk:{}, ysting:{}, temperatur:{}, innst:{}, svinn:{} }, kjeder = {};
 
   function basisUrl(){ return location.origin + location.pathname.replace(/[^/]*$/, ""); }
   function feil(melding, status, kode){ const e = new Error(melding); e.status = status; e.code = kode; return e; }
