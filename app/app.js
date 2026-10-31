@@ -84,8 +84,7 @@ async function start(){
   try{
     const st=await Store.init();
     S.bruker=st.bruker||null;
-    /* Gjester (private e-postadresser) har bare lesetilgang i SharePoint. Vis det fra start. */
-    if(S.bruker && S.bruker.epost && !/@toddum\.(com|onmicrosoft\.com)$/i.test(S.bruker.epost)) S.kunLes=true;
+    /* Tilgangen styres i SharePoint. Får brukeren «ingen tilgang» (403) ved lagring, går appen over til lesemodus. */
     if(st.tilstand==="ikke-konfigurert"){ S.fase="ikke-konfigurert"; render(); return; }
     if(st.tilstand==="logget-ut"){ S.fase="login"; render(); return; }
     if(st.tilstand==="oppsett" || location.hash==="#oppsett"){ S.fase="oppsett"; S.mangler=st.mangler||[]; render(); return; }
