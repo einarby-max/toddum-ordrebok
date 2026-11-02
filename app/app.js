@@ -37,9 +37,11 @@ function transportValg(valgt){ const n=transportNavn(); if(valgt && !n.includes(
 function transportAdresse(navn){ const t=transportør(navn); return (t&&t.adresse) ? t.adresse : (navn||""); }
 function trengerCMR(o){ const k=kunde(o.kundeId); return !!(transportør(o.transport)?.cmr || (k&&k.cmr)); }
 /* Antall lagres alltid i salgsenheten (beger, spann, kg, liter). Kunder som bestiller i D-pak, vises og justeres i D-pak. */
-function iDP(o,p){ if(!p || !(p.perDP>2)) return false;   /* spann (2 per DP) telles alltid i spann */ const v=S.visDP.get(o.id); if(v!=null) return v; return kunde(o.kundeId)?.antallI==="dp"; }
+/* Kunder som bestiller i D-pak (f.eks. ASKO), får alt i D-pak, også spann (2 spann per D-pak).
+   Bryteren «Beger / D-pak» på ordren gjelder bare begre og poser, så spann ikke dobles ved et uhell hos andre kunder. */
+function iDP(o,p){ if(!p || !(p.perDP>1)) return false; const k=kunde(o.kundeId)?.antallI==="dp"; if(!(p.perDP>2)) return k; const v=S.visDP.get(o.id); if(v!=null) return v; return k; }
 const enhetNavn = (p,n) => ({spann:"spann",kg:"kg",liter:"l",pose:n===1?"pose":"poser",beger:"beger"})[p?.enhet] || (/spann/i.test(p?.kort||"")?"spann":"stk");
-function antallTekst(a,p){ if(!a) return ""; const e=enhetNavn(p,a); if(!p || !(p.perDP>2)) return `${nf(a)} ${e}`; const d=dpTekst(a,p); return d&&!/^\d+ DP$/.test(d) ? `${nf(a)} ${e} = ${d.replace(/\+ (\d+)$/,"+ $1 løse")}` : `${nf(a)} ${e}${d?` = ${d}`:""}`; }
+function antallTekst(a,p){ if(!a) return ""; const e=enhetNavn(p,a); if(!p || !(p.perDP>1)) return `${nf(a)} ${e}`; const d=dpTekst(a,p); return d&&!/^\d+ DP$/.test(d) ? `${nf(a)} ${e} = ${d.replace(/\+ (\d+)$/,"+ $1 løse")}` : `${nf(a)} ${e}${d?` = ${d}`:""}`; }
 function toast(msg){ const t=$("#toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast.t); toast.t=setTimeout(()=>t.hidden=true,3200); }
 function errMsg(e){ const s=e&&e.status; if(s===0) return "Ingen nettforbindelse. Endringen ble ikke lagret."; if(s===401) return "Innloggingen har gått ut. Last inn siden på nytt."; if(s===403) return "Du har bare lesetilgang til ordreboka. Endringen ble ikke lagret."; return "Klarte ikke å lagre i SharePoint. Prøv igjen om litt."; }
 function ukeParitet(w){ return w%2===0?"partall":"oddetall"; }
