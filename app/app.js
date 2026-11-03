@@ -39,7 +39,10 @@ function trengerCMR(o){ const k=kunde(o.kundeId); return !!(transportør(o.trans
 /* Antall lagres alltid i salgsenheten (beger, spann, kg, liter). Kunder som bestiller i D-pak, vises og justeres i D-pak. */
 /* Kunder som bestiller i D-pak (f.eks. ASKO), får alt i D-pak, også spann (2 spann per D-pak).
    Bryteren «Beger / D-pak» på ordren gjelder bare begre og poser, så spann ikke dobles ved et uhell hos andre kunder. */
-function iDP(o,p){ if(!p || !(p.perDP>1)) return false; const k=kunde(o.kundeId)?.antallI==="dp"; if(!(p.perDP>2)) return k; const v=S.visDP.get(o.id); if(v!=null) return v; return k; }
+/* Bryteren «Beger / D-pak» gjelder nå alle varer med D-pak, også spann (2 spann per D-pak). Antallet lagres fortsatt i spann, så bare visningen endres. */
+function iDP(o,p){ if(!p || !(p.perDP>1)) return false; const k=kunde(o.kundeId)?.antallI==="dp"; const v=S.visDP.get(o.id); if(v!=null) return v; return k; }
+/* Mangler «antall per D-pak» på produktet, leses det fra pakningen (f.eks. «2 x 2,5 kg» gir 2). Endres bare i minnet. */
+function normProd(ps){ return ps.map(p=>{ if(p.perDP>1) return p; const m=/^\s*(\d+)\s*[x×]/i.exec(p.pakning||""); return m&&+m[1]>1 ? {...p, perDP:+m[1]} : p; }); }
 const enhetNavn = (p,n) => ({spann:"spann",kg:"kg",liter:"l",pose:n===1?"pose":"poser",beger:"beger"})[p?.enhet] || (/spann/i.test(p?.kort||"")?"spann":"stk");
 function antallTekst(a,p){ if(!a) return ""; const e=enhetNavn(p,a); if(!p || !(p.perDP>1)) return `${nf(a)} ${e}`; const d=dpTekst(a,p); return d&&!/^\d+ DP$/.test(d) ? `${nf(a)} ${e} = ${d.replace(/\+ (\d+)$/,"+ $1 løse")}` : `${nf(a)} ${e}${d?` = ${d}`:""}`; }
 function toast(msg){ const t=$("#toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast.t); toast.t=setTimeout(()=>t.hidden=true,3200); }
@@ -96,7 +99,7 @@ async function start(){
 async function lastAlt(){
   S.fase="klar"; S.db=true; render();
   const [p,k,t]=await Promise.all([Store.hent("produkter"),Store.hent("kunder"),Store.hent("transport").catch(()=>[])]);
-  S.produkter=p; S.kunder=k.sort((a,b)=>a.navn.localeCompare(b.navn,"nb")); S.loaded.p=S.loaded.k=true;
+  S.produkter=normProd(p); S.kunder=k.sort((a,b)=>a.navn.localeCompare(b.navn,"nb")); S.loaded.p=S.loaded.k=true;
   settTransport(t);
   await hentUke();
   Prod.last();
@@ -125,7 +128,7 @@ async function poll(){
   await hentUke();
   Prod.poll();
   if(S.pollN%6===0 && S.tab!=="kunder" && S.tab!=="produkter"){
-    try{ const [p,k]=await Promise.all([Store.hent("produkter"),Store.hent("kunder")]); S.produkter=p; S.kunder=k.sort((a,b)=>a.navn.localeCompare(b.navn,"nb")); if(S.tab!=="transport"){ const t=await Store.hent("transport"); if(t.length) S.transport=t; } planRender(); }catch(_){}
+    try{ const [p,k]=await Promise.all([Store.hent("produkter"),Store.hent("kunder")]); S.produkter=normProd(p); S.kunder=k.sort((a,b)=>a.navn.localeCompare(b.navn,"nb")); if(S.tab!=="transport"){ const t=await Store.hent("transport"); if(t.length) S.transport=t; } planRender(); }catch(_){}
   }
 }
 function abonnerUke(){ if(!S.db) return; S.loaded.o=false; S.ordre=[]; hentUke(); }
