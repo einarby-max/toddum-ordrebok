@@ -28,7 +28,17 @@ const Prod = (() => {
   ];
   const SOL = { kWp: 28.475, totalt: 64682, iÅr: 19918, fra: "desember 2023" };
   const ÅRSAK = ["Utgått dato", "Skadet eller lekk", "Kvalitet", "Smaking og prøver", "Annet"];
-  const KONTROLL = ["Pasteurisering °C", "Pasteurisering tid (s)", "pH", "Melketemperatur °C", "Ostemasse kg", "Annet"];
+  const KONTROLL = ["pH", "Temperatur °C", "Pasteurisering °C", "Pasteurisering tid (s)", "Melketemperatur °C", "Kultur", "Kalsiumklorid (CaCl2)", "Løpe", "Ostemasse kg", "Annet"];
+  /* Ystelogg etter papirskjemaet «Produksjon av mozzarella»: mengde, klokkeslett, temperatur og pH per trinn. */
+  const LOGG = [
+    ["kultur", "Kultur (type)"], ["kulturPoser", "Kultur – antall poser"], ["cacl2", "Kalsiumklorid (CaCl2)"], ["lope", "Løpe"],
+    ["roring", "Røring"], ["koag", "Koagulering"], ["skj10", "Skjæring 10 %"], ["hvile", "Hvile"], ["skj45", "Skjæring 45 %"],
+    ["hvileMyse", "Hvile i myse"], ["drenering", "Drenering"], ["strekking", "Strekking – vann"], ["forming", "Forming"], ["ferdig", "Ferdig produkt"],
+  ];
+  const OSTER = ["Mozzarella", "Burrata", "Stracciatella", "Fior di latte", "Ricotta", "Halloumi"];
+  const batchNr = y => Math.max(1, tall(y && y.batchNr) || 1);
+  const navnY = y => `${dmy(y.dato)}${batchNr(y) > 1 || P().ystinger.some(z => z.id !== y.id && z.dato === y.dato) ? ` · batch ${batchNr(y)}` : ""}${y.osteType ? ` · ${y.osteType}` : ""}`;
+  const åpne = () => P().ystinger.filter(y => y.status !== "ferdig").sort((a, b) => (a.dato || "").localeCompare(b.dato || "") || batchNr(a) - batchNr(b));
   const P = () => S.pr || (S.pr = { pv: "oversikt", ystinger: [], melk: [], temp: [], svinn: [], spot: {}, spotRaw: {}, alleOrdre: null, innst: null, edit: null, loaded: false, laster: false, tempValg: 7, tempForslag: null, melkBilde: null, melkBildeUrl: "", lagrerT: null, feilTilgang: false });
   const sats = () => ({ ...SATSER, ...(P().innst || {}), emb: { ...SATSER.emb, ...((P().innst || {}).emb || {}) }, modell: { ...SATSER.modell, ...((P().innst || {}).modell || {}) } });
   const kr = n => nf(Math.round(n), 0) + " kr";
@@ -85,10 +95,12 @@ const Prod = (() => {
     const om = tall(y.ostemasseKg);
     return { melk, flote, min, pers, timer, kg, enh, verdi, modell, k, pris, om, perKg: kg ? k.sum / kg : 0, db: verdi - k.sum, dbPst: verdi ? (verdi - k.sum) / verdi : 0, utbytte: melk ? (om ? om : kg) / melk * 100 : 0, utbytteOm: !!om, timerPer100: kg ? timer / kg * 100 : 0 };
   }
-  const lotFor = dato => batchFra(dato);
+  /* Batch 1 får vanlig lot (som ordrene), batch 2 og videre samme dag får -2, -3 … bak. */
+  const lotFor = (dato, nr) => batchFra(dato) + (nr > 1 ? "-" + nr : "");
+  const baseLot = lot => String(lot || "").replace(/-\d+$/, "");
   function bestiltUke(key) { const sum = {}; if (key !== uke().key) return null; S.ordre.forEach(o => linjer(o).forEach(l => sum[l.varenr] = (sum[l.varenr] || 0) + l.antall)); return sum; }
   function produsertUke(key) { const sum = {}; P().ystinger.filter(y => y.uke === key).forEach(y => Object.entries(y.produsert || {}).forEach(([v, n]) => sum[v] = (sum[v] || 0) + tall(n))); return sum; }
-  function sporing(lot) { const ut = []; S.ordre.forEach(o => linjer(o).forEach(l => { const b = l.batch || batchFra(o.prodDato); if (b && b === lot) ut.push({ kunde: o.kundeNavn, varenr: l.varenr, antall: l.antall }); })); return ut; }
+  function sporing(lot) { const ut = []; S.ordre.forEach(o => linjer(o).forEach(l => { const b = l.batch || batchFra(o.prodDato); if (b && b === baseLot(lot)) ut.push({ kunde: o.kundeNavn, varenr: l.varenr, antall: l.antall }); })); return ut; }
   const ledigMelk = () => P().melk.filter(m => !m.ystingId).sort((a, b) => (a.tid || "").localeCompare(b.tid || ""));
 
   /* ---------- lagring ---------- */
@@ -104,7 +116,8 @@ const Prod = (() => {
   function nyYsting() {
     const d = iDag(), u = isoUke(new Date());
     const ml = ledigMelk(); const liter = ml.reduce((s, m) => s + tall(m.liter), 0);
-    const y = { id: nyId("ysting"), dato: d, uke: u.key, lot: lotFor(d), status: "pågår", melkLiter: liter, melkIds: ml.map(m => m.id), flote: 0, tid: [], personer: 2, minutter: 0, kontroller: [], produsert: {}, esker: 0, svinnKg: 0, merknad: "", registrertAv: brukerNavn() };
+    const nr = P().ystinger.filter(z => z.dato === d).reduce((m, z) => Math.max(m, batchNr(z)), 0) + 1;
+    const y = { id: nyId("ysting"), dato: d, uke: u.key, batchNr: nr, lot: lotFor(d, nr), status: "pågår", melkLiter: liter, melkIds: ml.map(m => m.id), flote: 0, tid: [], personer: 2, minutter: 0, kontroller: [], produsert: {}, esker: 0, svinnKg: 0, merknad: "", registrertAv: brukerNavn(), ystetAv: brukerNavn(), osteType: "", logg: {} };
     ml.forEach(m => lagreMelk({ ...m, ystingId: y.id }).catch(() => {}));
     P().pv = "ysting"; lagreYsting(y, true); render();
   }
@@ -122,10 +135,10 @@ const Prod = (() => {
 
   function visOversikt() {
     const p = P(), u = uke(), ml = ledigMelk();
-    const aktiv = p.ystinger.find(y => y.status !== "ferdig");
+    const åp = åpne(), idag = iDag(), iDagN = p.ystinger.filter(y => y.dato === idag).length;
     const best = bestiltUke(u.key) || {}, prodd = produsertUke(u.key);
     const varer = prodAlle().filter(x => best[x.varenr] || prodd[x.varenr]);
-    const siste = [...p.ystinger].sort((a, b) => (b.dato || "").localeCompare(a.dato || "") || (b.endret || "").localeCompare(a.endret || "")).slice(0, 12);
+    const siste = [...p.ystinger].sort((a, b) => (b.dato || "").localeCompare(a.dato || "") || batchNr(b) - batchNr(a)).slice(0, 12);
     const d30 = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
     const ferdig30 = p.ystinger.filter(y => y.status === "ferdig" && y.dato >= d30).map(beregn);
     const sum = (f) => ferdig30.reduce((s, b) => s + f(b), 0);
@@ -134,8 +147,9 @@ const Prod = (() => {
     return `
     <div class="toolbar">
       <button class="btn primary lagre" data-act="prVis" data-v="melk">Hent melk</button>
-      ${aktiv ? `<button class="btn primary lagre" data-act="prApne" data-id="${esc(aktiv.id)}">Fortsett ysting ${esc(dmy(aktiv.dato))}</button>` : `<button class="btn primary lagre" data-act="prNy">Start ny ysting</button>`}
+      <button class="btn primary lagre" data-act="prNy">${iDagN ? `Start ysting nr. ${iDagN + 1} i dag` : "Start ny ysting"}</button>
     </div>
+    ${åp.length ? `<div class="card form"><h3>Ystinger som ikke er avsluttet</h3>${åp.map(y => `<div class="actions"><button class="btn ${y.dato === idag ? "primary" : ""}" data-act="prApne" data-id="${esc(y.id)}">Fortsett ${esc(navnY(y))}</button>${y.dato < idag ? `<span class="hint" style="color:var(--warn)">Fra en tidligere dag – avslutt den når den er ferdig, så dagens registreringer ikke havner her.</span>` : `<span class="hint">I dag · lot ${esc(y.lot)}</span>`}</div>`).join("")}</div>` : ""}
     ${ml.length ? `<p class="notice"><b>Melk klar i ysteriet:</b> ${ml.map(m => `${nf(tall(m.liter))} l (${esc(datoKl(m.tid))}, ${nf(tall(m.temp), 1)} °C)`).join(" · ")}. Den kobles til neste ysting.</p>` : ""}
     <div class="stats"><span>Siste 30 dager: <b>${ferdig30.length}</b> ystinger</span><span><b>${nf(t30.melk)}</b> l melk</span><span><b>${nf(t30.kg, 1)}</b> kg ost</span>
       <span>Utbytte <b>${t30.melk ? nf(t30.kg / t30.melk * 100, 1) : "–"}</b> kg/100 l</span><span><b>${nf(t30.timer, 1)}</b> timer</span>
@@ -151,12 +165,37 @@ const Prod = (() => {
       </div>
     </div>
     <h3 style="font-family:var(--f-display);font-weight:400;margin:18px 0 8px">Siste ystinger</h3>
-    ${siste.length ? `<div class="tablewrap"><table class="grid"><thead><tr><th>Dato</th><th>Lot</th><th class="n">Melk (l)</th><th class="n">Timer</th><th class="n">Kg ost</th><th class="n">Kg/100 l</th><th class="n">Kost</th><th class="n">Kr/kg</th><th class="n">DB</th><th>Status</th></tr></thead><tbody>
-    ${siste.map(y => { const b = beregn(y); return `<tr data-act="prApne" data-id="${esc(y.id)}" style="cursor:pointer"><td>${esc(dmy(y.dato))}</td><td>${esc(y.lot)}</td><td class="n">${nf(b.melk)}</td><td class="n">${nf(b.timer, 1)}</td><td class="n">${nf(b.kg, 1)}</td><td class="n">${b.melk ? nf(b.utbytte, 1) : "–"}</td><td class="n">${nf(Math.round(b.k.sum))}</td><td class="n">${b.kg ? nf(Math.round(b.perKg)) : "–"}</td><td class="n">${b.verdi ? nf(b.dbPst * 100) + " %" : "–"}</td><td><span class="pill ${y.status === "ferdig" ? "st-sendt" : "st-produsert"}">${y.status === "ferdig" ? "Ferdig" : "Pågår"}</span></td></tr>`; }).join("")}
+    ${siste.length ? `<div class="tablewrap"><table class="grid"><thead><tr><th>Dato</th><th>Ost</th><th>Lot</th><th class="n">Melk (l)</th><th class="n">Timer</th><th class="n">Kg ost</th><th class="n">Kg/100 l</th><th class="n">Kost</th><th class="n">Kr/kg</th><th class="n">DB</th><th>Status</th></tr></thead><tbody>
+    ${siste.map(y => { const b = beregn(y); return `<tr data-act="prApne" data-id="${esc(y.id)}" style="cursor:pointer"><td>${esc(dmy(y.dato))}${batchNr(y) > 1 ? ` <span class="hint">#${batchNr(y)}</span>` : ""}</td><td>${esc(y.osteType || "")}</td><td>${esc(y.lot)}</td><td class="n">${nf(b.melk)}</td><td class="n">${nf(b.timer, 1)}</td><td class="n">${nf(b.kg, 1)}</td><td class="n">${b.melk ? nf(b.utbytte, 1) : "–"}</td><td class="n">${nf(Math.round(b.k.sum))}</td><td class="n">${b.kg ? nf(Math.round(b.perKg)) : "–"}</td><td class="n">${b.verdi ? nf(b.dbPst * 100) + " %" : "–"}</td><td><span class="pill ${y.status === "ferdig" ? "st-sendt" : "st-produsert"}">${y.status === "ferdig" ? "Ferdig" : "Pågår"}</span></td></tr>`; }).join("")}
     </tbody></table></div>` : `<div class="empty"><h3>Ingen ystinger registrert ennå</h3>Trykk «Start ny ysting» når dere begynner.</div>`}`;
   }
 
 
+  /* Kontrollpunkter registrert en annen dag enn ystingens dato (typisk fordi gårsdagens ysting sto åpen). Kan flyttes uten at noe slettes. */
+  function visFeilDag(y) {
+    const andre = {}; arr(y.kontroller).forEach(k => { const d = (k.tid || "").slice(0, 10); if (d && d !== y.dato) andre[d] = (andre[d] || 0) + 1; });
+    return Object.entries(andre).map(([d, n]) => {
+      const mål = P().ystinger.filter(z => z.id !== y.id && z.dato === d).sort((a, b) => batchNr(a) - batchNr(b));
+      return `<p class="notice">${n} kontrollpunkt${n > 1 ? "er" : ""} her er registrert ${esc(dmyLang(d))}, ikke ${esc(dmy(y.dato))}. ${mål.map(z => `<button type="button" class="btn sm" data-act="prFlyttK" data-d="${d}" data-til="${esc(z.id)}">Flytt til ${esc(navnY(z))}</button>`).join(" ")} <button type="button" class="btn sm" data-act="prFlyttK" data-d="${d}" data-til="">Flytt til en ny ysting ${esc(dmy(d))}</button></p>`;
+    }).join("");
+  }
+  function visLogg(y) {
+    const l = y.logg && typeof y.logg === "object" ? y.logg : {};
+    const inp = (r, f, ph, mode) => `<input class="txt" id="pl-${r}-${f}" data-pl="${r}|${f}" ${mode ? `inputmode="${mode}"` : ""} placeholder="${ph}" value="${esc((l[r] || {})[f] || "")}" style="width:${f === "mengde" ? 52 : 42}px;font-size:15px">`;
+    return `<h4>2. Ystelogg</h4>
+      <div class="row">
+        <label class="f">Type ost i dag<input class="txt" id="py-osteType" data-pf="osteType" list="pr-oster" value="${esc(y.osteType || "")}" placeholder="f.eks. Mozzarella"></label>
+        <label class="f">Ystet av<input class="txt" id="py-ystetAv" data-pf="ystetAv" value="${esc(y.ystetAv || "")}"></label>
+        <label class="f">Starttemperatur melk (°C)<input class="txt" id="py-startTemp" data-pf="startTemp" inputmode="decimal" value="${esc(y.startTemp || "")}"></label>
+        <label class="f">Varmeelementer i bruk<input class="txt" id="py-varmeElementer" data-pf="varmeElementer" inputmode="numeric" value="${esc(y.varmeElementer || "")}"></label>
+        <label class="f">Temp. når varmen slås av (°C)<input class="txt" id="py-tempVarmeAv" data-pf="tempVarmeAv" inputmode="decimal" value="${esc(y.tempVarmeAv || "")}"></label>
+      </div>
+      <datalist id="pr-oster">${OSTER.map(o => `<option value="${o}">`).join("")}</datalist>
+      <div class="tablewrap"><table class="grid ylogg"><thead><tr><th>Trinn</th><th>Mengde</th><th>Kl.</th><th>Temp °C</th><th>pH</th></tr></thead><tbody>
+      ${LOGG.map(([r, n]) => `<tr><td>${esc(n)}</td><td>${inp(r, "mengde", r === "kultur" ? "type" : "")}</td><td><div style="display:flex;gap:4px">${inp(r, "kl", "kl.", "decimal")}<button type="button" class="btn sm" data-act="prNaa" data-r="${r}" title="Sett klokkeslett nå" style="padding:4px 6px">Nå</button></div></td><td>${inp(r, "temp", "", "decimal")}</td><td>${inp(r, "ph", "", "decimal")}</td></tr>`).join("")}
+      </tbody></table></div>
+      <p class="hint">Fyll inn underveis. Trykk «Nå» for å sette klokkeslettet. Alt lagres med en gang.</p>`;
+  }
   function visInn(y) {
     const kilder = P().ystinger.filter(z => z.id !== y.id && tall(z.overfortUtKg) > 0 && (restUt(z) > 0.05 || arr(y.overfortInn).some(x => x.fra === z.id)) && (z.dato || "") <= (y.dato || "9"));
     const inn = arr(y.overfortInn);
@@ -287,13 +326,18 @@ const Prod = (() => {
     const p = P(); let y = p.edit;
     if (!y) {
       const ml = ledigMelk();
-      return `<div class="empty"><h3>Ingen ysting er åpen</h3>${ml.length ? `${nf(ml.reduce((s, m) => s + tall(m.liter), 0))} liter melk er klar og blir koblet til ystingen.` : "Ingen melk er registrert ennå. Du kan likevel starte og skrive liter selv."}<div class="actions" style="justify-content:center;margin-top:12px"><button class="btn primary lagre" data-act="prNy">Start ny ysting</button></div></div>`;
+      const åp = åpne();
+      return `<div class="empty"><h3>Ingen ysting er åpen</h3>${ml.length ? `${nf(ml.reduce((s, m) => s + tall(m.liter), 0))} liter melk er klar og blir koblet til ystingen.` : "Ingen melk er registrert ennå. Du kan likevel starte og skrive liter selv."}<div class="actions" style="justify-content:center;margin-top:12px"><button class="btn primary lagre" data-act="prNy">Start ny ysting</button></div>
+        ${åp.length ? `<p class="hint" style="margin-top:14px">Eller fortsett en som ikke er avsluttet:</p><div class="actions" style="justify-content:center">${åp.map(z => `<button class="btn" data-act="prApne" data-id="${esc(z.id)}">${esc(navnY(z))}</button>`).join("")}</div>` : ""}</div>`;
     }
     const b = beregn(y), kjører = pågår(y), s = sats(), ro = y.status === "ferdig";
     const spor = sporing(y.lot);
     const ml = arr(y.melkIds).length ? p.melk.filter(m => arr(y.melkIds).includes(m.id)) : [];
     return `<form class="card form" id="prYstForm" data-id="${esc(y.id)}">
-      <div class="thead"><h3>Ysting ${esc(dmy(y.dato))} · lot ${esc(y.lot)}</h3><span class="pill ${ro ? "st-sendt" : "st-produsert"}">${ro ? "Ferdig" : "Pågår"}</span></div>
+      <div class="thead"><h3>Ysting ${esc(navnY(y))} · lot ${esc(y.lot)}</h3><span class="pill ${ro ? "st-sendt" : "st-produsert"}">${ro ? "Ferdig" : "Pågår"}</span></div>
+      ${!ro && y.dato < iDag() ? `<p class="notice">Denne ystingen er fra <b>${esc(dmyLang(y.dato))}</b>. Registrerer du for i dag, gå tilbake og trykk «Start ny ysting».</p>` : ""}
+      ${visFeilDag(y)}
+      ${!ro && ledigMelk().length ? `<p class="notice">${nf(ledigMelk().reduce((s, m) => s + tall(m.liter), 0))} liter melk er registrert, men ikke koblet til noen ysting. <button type="button" class="btn sm" data-act="prKobleMelk">Koble til denne ystingen</button></p>` : ""}
       <h4>1. Melk og råvarer</h4>
       <div class="row">
         <label class="f">Dato<input type="date" class="txt" id="py-dato" data-pf="dato" value="${esc(y.dato)}"></label>
@@ -310,7 +354,8 @@ const Prod = (() => {
       </div>
       ${tall(y.overfortUtKg) ? `<p class="hint">${nf(tall(y.overfortUtKg), 1)} kg ostemasse og ${kr(overførtUtKr(y))} av kostnaden flyttes til ystingen som bruker den. ${restUt(y) > 0.05 ? `${nf(restUt(y), 1)} kg er ikke brukt ennå.` : "Alt er brukt."}</p>` : ""}
       ${visInn(y)}
-      <h4>2. Tid</h4>
+      ${visLogg(y)}
+      <h4>3. Tid</h4>
       <div class="actions">
         ${kjører ? `<button type="button" class="btn danger lagre" data-act="prStopp">■ Stopp tid</button>` : `<button type="button" class="btn primary lagre" data-act="prStart">▶ Start tid</button>`}
         <span style="font-size:26px;font-family:var(--f-display)" id="prKlokke">${tidTekst(b.min)}</span>
@@ -318,15 +363,15 @@ const Prod = (() => {
         <label class="f" style="width:150px">Rett total (min)<input class="txt" id="py-minutter" data-pf="minutter" inputmode="numeric" placeholder="${b.min}" value="${y.minutterManuelt ? esc(y.minutter) : ""}"></label>
       </div>
       <p class="hint">Tiden teller fra «Start» til «Stopp», og dere kan starte og stoppe flere ganger. Arbeidstimer = tid × antall personer = <b>${nf(b.timer, 1)} timer</b>. Har dere glemt å starte, skriv riktig total i «Rett total».</p>
-      <h4>3. Kontrollpunkter</h4>
-      ${arr(y.kontroller).length ? `<div class="tablewrap"><table class="grid"><tbody>${y.kontroller.map((k, i) => `<tr><td>${esc(klokke(k.tid))}</td><td>${esc(k.type)}</td><td class="n"><b>${esc(k.verdi)}</b></td><td class="hint">${esc(k.merknad || "")}</td><td><button type="button" class="btn sm ghost danger" data-act="prSlettKontroll" data-i="${i}" aria-label="Slett">✕</button></td></tr>`).join("")}</tbody></table></div>` : `<p class="hint">Ingen kontrollpunkter registrert.</p>`}
+      <h4>4. Andre kontrollpunkter</h4>
+      ${arr(y.kontroller).length ? `<div class="tablewrap"><table class="grid"><tbody>${y.kontroller.map((k, i) => `<tr><td>${esc((k.tid || "").slice(0, 10) === y.dato ? klokke(k.tid) : datoKl(k.tid))}</td><td>${esc(k.type)}</td><td class="n"><b>${esc(k.verdi)}</b></td><td class="hint">${esc(k.merknad || "")}</td><td><button type="button" class="btn sm ghost danger" data-act="prSlettKontroll" data-i="${i}" aria-label="Slett">✕</button></td></tr>`).join("")}</tbody></table></div>` : `<p class="hint">Ingen kontrollpunkter registrert.</p>`}
       <div class="row">
-        <label class="f">Hva<select class="txt" id="pk-type">${KONTROLL.map(k => `<option>${k}</option>`).join("")}</select></label>
-        <label class="f">Verdi<input class="txt" id="pk-verdi" inputmode="decimal"></label>
-        <label class="f">Merknad<input class="txt" id="pk-merk"></label>
+        <label class="f">Hva<select class="txt" id="pk-type">${KONTROLL.map(k => `<option ${k === (p.kType || KONTROLL[0]) ? "selected" : ""}>${k}</option>`).join("")}</select></label>
+        <label class="f">Verdi<input class="txt" id="pk-verdi" inputmode="decimal" value="${esc(p.kVerdi || "")}"></label>
+        <label class="f">Merknad<input class="txt" id="pk-merk" value="${esc(p.kMerk || "")}"></label>
       </div>
       <div class="actions"><button type="button" class="btn" data-act="prKontroll">Legg til kontrollpunkt</button></div>
-      <h4>4. Produsert</h4>
+      <h4>5. Produsert</h4>
       <div class="lines">${prodSort().filter(x => x.gruppe !== "Melk").map(x => { const n = tall((y.produsert || {})[x.varenr]); return `<div class="line bl-${esc(x.gruppe)} ${n ? "has" : ""}">
         <div class="pn">${esc(x.kort)}<small>#${esc(x.varenr)}</small>${n ? `<small class="ant">${nf(kgNetto(n, x), 1)} kg</small>` : ""}</div>
         <div class="qty"><button type="button" class="stp" data-act="prMinus" data-v="${esc(x.varenr)}" ${n ? "" : "disabled"} aria-label="Én mindre ${esc(x.kort)}">−</button><input id="pp-${esc(x.varenr)}" data-pp="${esc(x.varenr)}" inputmode="decimal" value="${n || ""}" placeholder="–" aria-label="Antall ${esc(x.kort)}"><button type="button" class="stp" data-act="prPluss" data-v="${esc(x.varenr)}" aria-label="Én mer ${esc(x.kort)}">+</button><span class="u">${esc(enhetNavn(x, 2))}</span></div></div>`; }).join("")}</div>
@@ -483,17 +528,34 @@ const Prod = (() => {
   }
 
   /* ---------- handlinger ---------- */
+  function flyttKontroller(d, tilId) {
+    const p = P(), fra = p.edit; if (!fra) return;
+    const flytt = arr(fra.kontroller).filter(k => (k.tid || "").slice(0, 10) === d); if (!flytt.length) return;
+    let til = p.ystinger.find(z => z.id === tilId);
+    if (!til) { const nr = p.ystinger.filter(z => z.dato === d).reduce((m, z) => Math.max(m, batchNr(z)), 0) + 1; til = { id: nyId("ysting"), dato: d, uke: isoUke(new Date(d + "T12:00")).key, batchNr: nr, lot: lotFor(d, nr), status: "pågår", melkLiter: 0, melkIds: [], flote: 0, tid: [], personer: 2, minutter: 0, kontroller: [], produsert: {}, esker: 0, svinnKg: 0, merknad: "", registrertAv: brukerNavn(), ystetAv: brukerNavn(), osteType: fra.osteType || "", logg: {} }; }
+    const nyTil = { ...til, kontroller: [...arr(til.kontroller), ...flytt].sort((a, b) => (a.tid || "").localeCompare(b.tid || "")), endret: nå() };
+    const { id, ...dTil } = nyTil;
+    const i = p.ystinger.findIndex(x => x.id === id); if (i >= 0) p.ystinger[i] = nyTil; else p.ystinger.push(nyTil);
+    /* Først lagres de flyttede punktene på mål-ystingen; først når det har gått bra, fjernes de fra denne. */
+    skriv("ysting/" + id, dTil).then(() => {
+      const n = { ...p.ystinger.find(x => x.id === fra.id) || fra }; n.kontroller = arr(n.kontroller).filter(k => (k.tid || "").slice(0, 10) !== d);
+      return lagreYsting(n, true);
+    }).then(() => { toast(`✓ ${flytt.length} kontrollpunkt flyttet til ${navnY(nyTil)}.`); render(); }).catch(feilLagring);
+  }
   function endreY(f) { const y = P().edit; if (!y) return; const n = { ...y }; f(n); lagreYsting(n); planRender(); }
   function klikk(el) {
     const a = el.dataset.act; if (!a || !a.startsWith("pr")) return false;
     const p = P();
-    if (a === "prVis") { p.pv = el.dataset.v; if (p.pv === "ysting" && !p.edit) { const akt = p.ystinger.find(y => y.status !== "ferdig"); if (akt) p.edit = akt; } render(); }
+    if (a === "prVis") { p.pv = el.dataset.v; if (p.pv === "ysting" && !p.edit) { const akt = åpne().filter(y => y.dato === iDag()); if (akt.length === 1) p.edit = akt[0]; } render(); }
+    else if (a === "prNaa") { const r = el.dataset.r, d = new Date(), kl = `${pad(d.getHours())}.${pad(d.getMinutes())}`; endreY(y => { const l = { ...(y.logg && typeof y.logg === "object" ? y.logg : {}) }; l[r] = { ...(l[r] || {}), kl }; y.logg = l; }); }
+    else if (a === "prKobleMelk") { const ml = ledigMelk(); if (!ml.length || !p.edit) return true; const id = p.edit.id; endreY(y => { y.melkIds = [...arr(y.melkIds), ...ml.map(m => m.id)]; y.melkLiter = tall(y.melkLiter) + ml.reduce((s, m) => s + tall(m.liter), 0); }); ml.forEach(m => lagreMelk({ ...m, ystingId: id }).catch(() => {})); }
+    else if (a === "prFlyttK") flyttKontroller(el.dataset.d, el.dataset.til);
     else if (a === "prNy") nyYsting();
     else if (a === "prApne") { p.edit = p.ystinger.find(y => y.id === el.dataset.id) || null; p.pv = "ysting"; render(); window.scrollTo(0, 0); }
     else if (a === "prLukk") { p.edit = null; p.pv = "oversikt"; render(); }
     else if (a === "prStart") endreY(y => { y.tid = [...arr(y.tid), { fra: nå() }]; y.minutterManuelt = false; });
     else if (a === "prStopp") endreY(y => { y.tid = arr(y.tid).map(t => t.til ? t : { ...t, til: nå() }); y.minutter = minutter(y); });
-    else if (a === "prKontroll") { const v = $("#pk-verdi")?.value.trim(); if (!v) { toast("Skriv en verdi."); return true; } const k = { tid: nå(), type: $("#pk-type").value, verdi: v, merknad: $("#pk-merk").value.trim(), av: brukerNavn() }; endreY(y => { y.kontroller = [...arr(y.kontroller), k]; }); }
+    else if (a === "prKontroll") { const v = $("#pk-verdi")?.value.trim(); if (!v) { toast("Skriv en verdi."); return true; } const k = { tid: nå(), type: $("#pk-type").value, verdi: v, merknad: $("#pk-merk").value.trim(), av: brukerNavn() }; p.kType = k.type; p.kVerdi = ""; p.kMerk = ""; endreY(y => { y.kontroller = [...arr(y.kontroller), k]; }); }
     else if (a === "prSlettKontroll") endreY(y => { y.kontroller = arr(y.kontroller).filter((_, i) => i !== +el.dataset.i); });
     else if (a === "prPluss" || a === "prMinus") { const v = el.dataset.v; endreY(y => { const pr = { ...(y.produsert || {}) }; const n = Math.max(0, tall(pr[v]) + (a === "prPluss" ? 1 : -1)); if (n) pr[v] = n; else delete pr[v]; y.produsert = pr; }); }
     else if (a === "prFerdig") { const y = P().edit; if (!y) return true; if (!Object.keys(y.produsert || {}).length) { toast("Registrer hva som er produsert før ystingen avsluttes."); return true; } const n = { ...y, status: "ferdig", tid: arr(y.tid).map(t => t.til ? t : { ...t, til: nå() }) }; if (tall(n.melkLiter) && !(tall(n.strompris) > 0) && P().spot[n.dato] > 0) n.strompris = Math.round(P().spot[n.dato] * 10000) / 10000; n.minutter = minutter(n); lagreYsting(n, true).then(() => toast(`✓ Ystingen ${dmy(n.dato)} er lagret. Lot ${n.lot}.`)); p.edit = null; p.pv = "oversikt"; render(); }
@@ -513,12 +575,16 @@ const Prod = (() => {
     const t = e.target, p = P();
     if (t.dataset.prfoto && t.files && t.files[0]) { const f = t.files[0]; krympBilde(f).then(b => { p.melkBilde = b; if (p.melkBildeUrl) URL.revokeObjectURL(p.melkBildeUrl); p.melkBildeUrl = URL.createObjectURL(b); render(); }).catch(() => { p.melkBilde = f; p.melkBildeUrl = URL.createObjectURL(f); render(); }); return true; }
     if (t.id === "prTempFil" && t.files && t.files[0]) { const f = t.files[0]; t.value = ""; lesLoggfil(f).catch(err => toast("Klarte ikke å lese loggfila: " + (err.message || err))); return true; }
+    if (t.id === "pk-type") { p.kType = t.value; return true; }
+    if (t.id === "pk-verdi") { p.kVerdi = t.value; return true; }
+    if (t.id === "pk-merk") { p.kMerk = t.value; return true; }
+    if (t.dataset.pl) { const [r, f] = t.dataset.pl.split("|"), v = t.value.trim(); endreY(y => { const l = { ...(y.logg && typeof y.logg === "object" ? y.logg : {}) }; l[r] = { ...(l[r] || {}), [f]: v }; y.logg = l; }); return true; }
     if (t.dataset.pf) {
       const f = t.dataset.pf; let v = t.value.trim();
       endreY(y => {
         if (["melkLiter", "flote", "personer", "esker", "svinnKg", "ostemasseKg", "overfortUtKg", "vannStart", "vannSlutt"].includes(f)) y[f] = tall(v);
         else if (f === "minutter") { if (v === "") { y.minutterManuelt = false; y.minutter = 0; } else { y.minutter = Math.round(tall(v)); y.minutterManuelt = true; } }
-        else if (f === "dato") { y.dato = v; y.uke = isoUke(new Date(v + "T12:00")).key; y.lot = lotFor(v); }
+        else if (f === "dato") { y.dato = v; y.uke = isoUke(new Date(v + "T12:00")).key; y.lot = lotFor(v, batchNr(y)); }
         else y[f] = v;
       });
       return true;
@@ -534,7 +600,8 @@ const Prod = (() => {
       const knapp = form.querySelector("[type=submit]"); knapp.disabled = true; knapp.textContent = "Lagrer …";
       const tid = nå(), id = nyId("melk");
       const m = { id, tid, dato: tid.slice(0, 10), liter, temp: tempS === "" ? "" : tall(tempS), hentetAv: brukerNavn(), bilde: "", ystingId: "", merknad: $("#prMelkMerk").value.trim() };
-      const aktiv = p.ystinger.find(y => y.status !== "ferdig" && y.dato === iDag()); if (aktiv) m.ystingId = aktiv.id;
+      /* Kobles bare automatisk når det er nøyaktig én åpen ysting i dag og den ikke har melk ennå. Ellers står melken klar til neste ysting. */
+      const iDagÅpne = åpne().filter(y => y.dato === iDag()); const aktiv = iDagÅpne.length === 1 && !tall(iDagÅpne[0].melkLiter) ? iDagÅpne[0] : null; if (aktiv) m.ystingId = aktiv.id;
       const opp = p.melkBilde ? Store.lastOppFil(`Ysteri/Melkehenting/${tid.slice(0, 10)} ${klokke(tid).replace(".", "")} ${liter} l.jpg`, p.melkBilde).then(r => r.url).catch(e => { toast("Bildet ble ikke lastet opp" + (e.status === 403 ? " (mangler tilgang)" : "") + ". Melken registreres uten bilde."); return ""; }) : Promise.resolve("");
       opp.then(url => { m.bilde = url; return lagreMelk(m); }).then(() => {
         if (aktiv) { const n = { ...aktiv, melkIds: [...arr(aktiv.melkIds), id], melkLiter: tall(aktiv.melkLiter) + liter }; lagreYsting(n, true); if (p.edit && p.edit.id === aktiv.id) p.edit = n; }
