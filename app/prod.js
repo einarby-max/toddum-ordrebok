@@ -2,9 +2,9 @@
    Data lagres i SharePoint-listene Ordrebok Melkehenting, Ordrebok Ysting, Ordrebok Temperatur og Ordrebok Innstillinger.
    Bilder av melketanken lagres i dokumentbiblioteket under Ysteri/Melkehenting. */
 const Prod = (() => {
-  /* Standardsatser fra Toddum Styringsmodell v9. Kan endres under Produksjon → Satser. */
+  /* Standardsatser fra Toddum Styringsmodell v9. Melkepris 7 kr/l bekreftet av Einar 08.11.2026. Kan endres under Produksjon → Satser. */
   const SATSER = {
-    melkKrL: 8, floteKrL: 65.23, timeKr: 294.97,
+    melkKrL: 7, floteKrL: 65.23, timeKr: 294.97,
     batchKr: 728.4,           // løpe 41,8 + kalsiumklorid 12,8 + kultur 448,8 + frakt 75 + vaskemiddel 150 (strøm og vann regnes for seg)
     kWh: 218, nettleieKr: 0.31, stromReserve: 1.1, vannKrM3: 0, omrade: "NO3",
     tempGrense: 4, melkTempGrense: 4,
