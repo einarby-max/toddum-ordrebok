@@ -2,14 +2,14 @@
    Data lagres i SharePoint-listene Ordrebok Melkehenting, Ordrebok Ysting, Ordrebok Temperatur og Ordrebok Innstillinger.
    Bilder av melketanken lagres i dokumentbiblioteket under Ysteri/Melkehenting. */
 const Prod = (() => {
-  /* Standardsatser fra Toddum Styringsmodell v9. Melkepris 7 kr/l bekreftet av Einar 08.11.2026. Kan endres under Produksjon → Satser. */
+  /* Standardsatser fra Toddum Styringsmodell v10. Melkepris 7 kr/l bekreftet av Einar 08.11.2026. Kan endres under Produksjon → Satser. */
   const SATSER = {
     melkKrL: 7, floteKrL: 65.23, timeKr: 294.97,
     batchKr: 728.4,           // løpe 41,8 + kalsiumklorid 12,8 + kultur 448,8 + frakt 75 + vaskemiddel 150 (strøm og vann regnes for seg)
     kWh: 218, nettleieKr: 0.31, stromReserve: 1.1, vannKrM3: 0, omrade: "NO3",
     tempGrense: 4, melkTempGrense: 4,
     emb: { "0001":4.21, "0002":22.97, "0010":4.21, "0011":22.97, "0020":4.21, "0022":22.97, "0009":4.21, "0008":10.73, "0041":34.71, "0031":7.88, "0030":22.97, "0032":0, "0042":8.19 },
-    modell: { "0001":14.52, "0002":232.2, "0010":16.76, "0011":190.5, "0020":44.73, "0022":437.76, "0030":290.55, "0031":31.97, "0009":46.7, "0008":89.46, "0041":660.05, "0032":88.96, "0042":133.29 },
+    modell: { "0001":13.6, "0002":213.72, "0010":15.65, "0011":175.71, "0020":43.59, "0022":426.38, "0030":268.37, "0031":30.12, "0009":46.27, "0008":88.61, "0041":651.51, "0032":81.56, "0042":131.59 },   // v10, melk 7 kr/l
   };
   /* Strøm per måned fra NTE-fakturaene (målepunkt 707057500065627076, eks. mva) og solcelleproduksjon avlest i SolisCloud 31.10.2026 (ca., lest av grafen).
      nett = kjøpt fra nettet (kWh), solgt = innmating (kWh), sol = produsert (kWh), kr = strøm + nettleie (kr eks. mva). Oppdateres når nye fakturaer kommer. */
