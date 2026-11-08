@@ -435,6 +435,7 @@ function visProdukter(){
     <label class="f">Enheter per DP<input class="txt" id="np-perDP" inputmode="numeric" value="2"></label>
     <label class="f">Brutto per DP (g)<input class="txt" id="np-dpBruttoG" inputmode="numeric"></label>
     <label class="f">Netto per enhet (g)<input class="txt" id="np-stkNettoG" inputmode="numeric"></label>
+    <label class="f">Selges per<select class="txt" id="np-enhet"><option value="stk">stk/beger</option><option value="spann">spann</option><option value="kg">kg</option><option value="liter">liter</option></select></label>
   </div><div class="actions"><button class="btn primary" type="submit">Legg til produkt</button><button class="btn ghost" type="button" data-act="avbrytProdukt">Avbryt</button></div></form>`:""}
   <div class="tablewrap"><table class="grid"><thead><tr><th>Varenr.</th><th>Kort navn</th><th class="n">Pris eks. mva</th><th>Gruppe</th><th>Pakning</th><th class="n">Per DP</th><th class="n">Brutto DP (g)</th><th class="n">Netto enhet (g)</th><th>GTIN</th><th>Aktiv</th></tr></thead>
   <tbody>${ps.map(p=>`<tr>
@@ -667,7 +668,8 @@ function leggTilProdukt(){
   const varenr=g("np-varenr").replace(/^#/,"");
   if(!/^[A-Za-z0-9_-]+$/.test(varenr)){ toast("Varenummeret kan bare inneholde tall og bokstaver."); return; }
   if(prod(varenr)){ toast("Det finnes allerede et produkt med dette varenummeret."); return; }
-  const p={varenr, kort:g("np-kort"), navn:g("np-kort"), gruppe:g("np-gruppe"), pakning:g("np-pakning"), perDP:Number(g("np-perDP"))||1, dpBruttoG:Number(g("np-dpBruttoG"))||0, stkNettoG:Number(g("np-stkNettoG"))||0, stkBruttoG:0, pris:Number(g("np-pris").replace(",","."))||0, enhet:"stk", varetype:"Fersk ost", sort:50, aktiv:true};
+  const p={varenr, kort:g("np-kort"), navn:g("np-kort"), gruppe:g("np-gruppe"), pakning:g("np-pakning"), perDP:Number(g("np-perDP"))||1, dpBruttoG:Number(g("np-dpBruttoG"))||0, stkNettoG:Number(g("np-stkNettoG"))||0, stkBruttoG:0, pris:Number(g("np-pris").replace(",","."))||0, enhet:g("np-enhet")||"stk", varetype:"Fersk ost", sort:50, aktiv:true};
+  if(p.enhet==="kg" && !p.stkNettoG) p.stkNettoG=1000; if(p.enhet==="liter" && !p.stkNettoG) p.stkNettoG=1000;
   S.produkter=[...S.produkter,p]; S.nyttProdukt=false; render(); const {varenr:v,...d}=p; skriv("produkter/"+v,d).then(()=>toast(`${p.kort} er lagt til.`));
 }
 
