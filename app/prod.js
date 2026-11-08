@@ -218,6 +218,7 @@ const Prod = (() => {
         <label class="f">Antall<input class="txt" id="sv-antall" inputmode="decimal" required></label>
         <label class="f">Årsak<select class="txt" id="sv-arsak">${ÅRSAK.map(a => `<option>${a}</option>`).join("")}</select></label>
         <label class="f">Lot (valgfritt)<input class="txt" id="sv-lot" inputmode="numeric"></label>
+        ${window.Lager ? `<label class="f">Kjølerom<select class="txt" id="sv-rom">${Lager.romValg("r1")}</select></label>` : ""}
       </div>
       <label class="f">Merknad<input class="txt" id="sv-merk"></label>
       <div class="actions"><button class="btn primary lagre" type="submit">Registrer svinn</button></div>
@@ -558,7 +559,7 @@ const Prod = (() => {
     else if (a === "prKontroll") { const v = $("#pk-verdi")?.value.trim(); if (!v) { toast("Skriv en verdi."); return true; } const k = { tid: nå(), type: $("#pk-type").value, verdi: v, merknad: $("#pk-merk").value.trim(), av: brukerNavn() }; p.kType = k.type; p.kVerdi = ""; p.kMerk = ""; endreY(y => { y.kontroller = [...arr(y.kontroller), k]; }); }
     else if (a === "prSlettKontroll") endreY(y => { y.kontroller = arr(y.kontroller).filter((_, i) => i !== +el.dataset.i); });
     else if (a === "prPluss" || a === "prMinus") { const v = el.dataset.v; endreY(y => { const pr = { ...(y.produsert || {}) }; const n = Math.max(0, tall(pr[v]) + (a === "prPluss" ? 1 : -1)); if (n) pr[v] = n; else delete pr[v]; y.produsert = pr; }); }
-    else if (a === "prFerdig") { const y = P().edit; if (!y) return true; if (!Object.keys(y.produsert || {}).length) { toast("Registrer hva som er produsert før ystingen avsluttes."); return true; } const n = { ...y, status: "ferdig", tid: arr(y.tid).map(t => t.til ? t : { ...t, til: nå() }) }; if (tall(n.melkLiter) && !(tall(n.strompris) > 0) && P().spot[n.dato] > 0) n.strompris = Math.round(P().spot[n.dato] * 10000) / 10000; n.minutter = minutter(n); lagreYsting(n, true).then(() => toast(`✓ Ystingen ${dmy(n.dato)} er lagret. Lot ${n.lot}.`)); p.edit = null; p.pv = "oversikt"; render(); }
+    else if (a === "prFerdig") { const y = P().edit; if (!y) return true; if (!Object.keys(y.produsert || {}).length) { toast("Registrer hva som er produsert før ystingen avsluttes."); return true; } const n = { ...y, status: "ferdig", tid: arr(y.tid).map(t => t.til ? t : { ...t, til: nå() }) }; if (tall(n.melkLiter) && !(tall(n.strompris) > 0) && P().spot[n.dato] > 0) n.strompris = Math.round(P().spot[n.dato] * 10000) / 10000; n.minutter = minutter(n); lagreYsting(n, true).then(() => { toast(`✓ Ystingen ${dmy(n.dato)} er lagret. Lot ${n.lot}.`); if (window.Lager) setTimeout(() => Lager.produksjonInn(n), 1500); }); p.edit = null; p.pv = "oversikt"; render(); }
     else if (a === "prGjenapne") endreY(y => { y.status = "pågår"; });
     else if (a === "prSlett") { const y = p.edit; if (!y) return true; if (p.bekreftSlett === y.id) { p.bekreftSlett = null; p.ystinger = p.ystinger.filter(x => x.id !== y.id); p.melk.filter(m => m.ystingId === y.id).forEach(m => lagreMelk({ ...m, ystingId: "" }).catch(() => {})); p.edit = null; p.pv = "oversikt"; clearTimeout(p.lagrerT); p.lagrerT = null; skriv("ysting/" + y.id, null).then(() => toast("Ystingen er slettet.")).catch(feilLagring); render(); } else { p.bekreftSlett = y.id; render(); setTimeout(() => { if (p.bekreftSlett === y.id) { p.bekreftSlett = null; render(); } }, 4000); } }
     else if (a === "prTempDager") { p.tempValg = +el.dataset.v; render(); }
@@ -567,7 +568,7 @@ const Prod = (() => {
     else if (a === "prSatsStd") { p.innst = null; skriv("innst/satser", { data: {} }).then(() => toast("Satsene er satt tilbake til standard.")).catch(feilLagring); render(); }
     else if (a === "prLeggInn") { const y = p.edit; if (!y) return true; const fra = $("#pi-fra")?.value, kg = tall($("#pi-kg")?.value); const src = p.ystinger.find(z => z.id === fra); if (!src || !(kg > 0)) { toast("Velg ysting og skriv antall kg."); return true; } if (kg > restUt(src) + 0.05) { toast(`Det er bare ${nf(Math.max(0, restUt(src)), 1)} kg igjen fra ${dmy(src.dato)}.`); return true; } endreY(n => { const inn = arr(n.overfortInn).filter(x => x.fra !== fra); const før = arr(n.overfortInn).find(x => x.fra === fra); inn.push({ fra, kg: kg + tall(før?.kg) }); n.overfortInn = inn; }); }
     else if (a === "prFjernInn") endreY(y => { y.overfortInn = arr(y.overfortInn).filter((_, i) => i !== +el.dataset.i); });
-    else if (a === "prSlettSvinn") { const id = el.dataset.id; if (p.bekreftSvinn === id) { p.bekreftSvinn = null; p.svinn = p.svinn.filter(x => x.id !== id); skriv("svinn/" + id, null).then(() => toast("Svinnet er slettet.")).catch(feilLagring); render(); } else { p.bekreftSvinn = id; toast("Trykk ✕ igjen for å slette."); setTimeout(() => { if (p.bekreftSvinn === id) p.bekreftSvinn = null; }, 4000); } }
+    else if (a === "prSlettSvinn") { const id = el.dataset.id; if (p.bekreftSvinn === id) { p.bekreftSvinn = null; p.svinn = p.svinn.filter(x => x.id !== id); skriv("svinn/" + id, null).then(() => { toast("Svinnet er slettet."); if (window.Lager) Lager.slettRef("sv-" + id); }).catch(feilLagring); render(); } else { p.bekreftSvinn = id; toast("Trykk ✕ igjen for å slette."); setTimeout(() => { if (p.bekreftSvinn === id) p.bekreftSvinn = null; }, 4000); } }
     else return false;
     return true;
   }
@@ -616,7 +617,8 @@ const Prod = (() => {
       const antall = tall($("#sv-antall").value); if (!(antall > 0)) { toast("Skriv antall."); return true; }
       const x = { id: nyId("svinn"), dato: $("#sv-dato").value || iDag(), varenr: $("#sv-vare").value, antall, arsak: $("#sv-arsak").value, lot: $("#sv-lot").value.trim(), merknad: $("#sv-merk").value.trim(), av: brukerNavn() };
       const { id, ...d } = x; p.svinn.push(x);
-      skriv("svinn/" + id, d).then(() => toast(`✓ Svinn registrert: ${nf(antall)} × ${prod(x.varenr)?.kort || x.varenr}.`)).catch(e => { p.svinn = p.svinn.filter(z => z.id !== id); feilLagring(e); });
+      const svRom = $("#sv-rom")?.value || "r1";
+      skriv("svinn/" + id, d).then(() => { toast(`✓ Svinn registrert: ${nf(antall)} × ${prod(x.varenr)?.kort || x.varenr}.`); if (window.Lager) Lager.svinnUt(x, svRom); }).catch(e => { p.svinn = p.svinn.filter(z => z.id !== id); feilLagring(e); });
       form.reset(); $("#sv-dato").value = iDag(); S.utkast.delete("prSvinnForm|"); render();
       return true;
     }
