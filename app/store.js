@@ -10,7 +10,7 @@ const Store = (() => {
     kunder: { navn: "Ordrebok Kunder", nokkel: "id", kol: [
       ["navn",T],["kundenr",T],["orgnr",T],["adresse",T],["adresse2",T],["postnr",T],["poststed",T],["land",T],["epost",T],["telefon",T],
       ["kontakt",T],["kontaktEpost",T],["kontaktTlf",T],["levNavn",T],["levAdresse",M],["transport",T],["cmr",B],["leveringsdag",T],
-      ["merknad",M],["instruks",M],["fastFrekvens",T],["fast",J],["inaktiv",B],["priser",J],["antallI",T] ] },
+      ["merknad",M],["instruks",M],["fastFrekvens",T],["fast",J],["inaktiv",B],["priser",J],["antallI",T],["fakturering",T,{ny:true}] ] },
     transport: { navn: "Ordrebok Transport", nokkel: "id", valgfri: true, kol: [
       ["navn",T],["adresse",M],["kontakt",T],["telefon",T],["epost",T],["cmr",B],["merknad",M],["aktiv",B],["sort",N],["nettside",T] ] },
     melk: { navn: "Ordrebok Melkehenting", nokkel: "id", valgfri: true, kol: [
@@ -27,7 +27,7 @@ const Store = (() => {
     innst: { navn: "Ordrebok Innstillinger", nokkel: "id", valgfri: true, kol: [ ["data",J] ] },
     ordre: { navn: "Ordrebok Ordre", nokkel: "id", kol: [
       ["uke",T,{indexed:true}],["kundeId",T],["kundeNavn",T],["linjer",J],["transport",T],["sendes",T],["prodDato",T],["bestnr",T],
-      ["merknad",M],["status",T],["kilde",T],["opprettet",T],["endret",T] ] },
+      ["merknad",M],["status",T],["kilde",T],["opprettet",T],["endret",T],["fakturering",T,{ny:true}] ] },
   };
   const SCOPES = ["Sites.Manage.All"];
   let app, konto, siteId;

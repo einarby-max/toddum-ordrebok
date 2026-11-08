@@ -5,6 +5,13 @@ const TRANSPORT_START = [
   {navn:"Kristensen Transport", adresse:"Kristensen Transport AS\nUtvordvegen 850, 7777 Nord-Statland", cmr:true},
   {navn:"Nær Engros Namsos"}, {navn:"Namdalingen"}, {navn:"Henter selv"}, {navn:"Egen levering"}, {navn:"Post/Bring"}, {navn:"Annet"} ];
 const STATUS = [["ny","Ny"],["produsert","Produsert"],["sendt","Sendt"],["fakturert","Fakturert"]];
+/* Hvordan kunden faktureres. Bare «unimicro» kommer med i ordrefila til Unimicro. */
+const FAKTURERING = [["unimicro","Unimicro"],["dagfinn","Dagfinn (ASKO)"],["dyrket","Dyrket-portalen"],["internt","Internt (månedlig)"],["ikke","Faktureres ikke (smaksprøver, stand, salgsarbeid)"]];
+const faktNavn = v => (FAKTURERING.find(f=>f[0]===v)||[,v])[1];
+/* Standard når kunden ikke har valgt: ASKO via Dagfinn, Dyrket via portalen, Gårdsbutikken internt, kunder uten kundenummer faktureres ikke. */
+function kundeFakt(k){ if(!k) return "ikke"; if(k.fakturering) return k.fakturering; const n=(k.navn||"").toLowerCase();
+  if(/^asko\b/.test(n)) return "dagfinn"; if(/dyrket/.test(n)) return "dyrket"; if(k.kundenr==="100004"||/gårdsbutikk/.test(n)) return "internt"; return k.kundenr ? "unimicro" : "ikke"; }
+function ordreFakt(o){ return o.fakturering || kundeFakt(kunde(o.kundeId)); }
 const FREKVENS = [["ingen","Ingen fast ordre"],["hver","Hver uke"],["partall","Partallsuker"],["oddetall","Oddetallsuker"]];
 
 const S = { db:null, fase:"start", bruker:null, feil:"", mangler:[], importStatus:"", pdfVindu:null, pollN:0, produkter:[], kunder:[], ordre:[], transport:[], visDP:new Map(), wordImport:null, tEdit:null, utkast:new Map(), lagret:new Map(), siste:new Map(), kunLes:false, tab:"uke", ukeDato:new Date(), open:new Set(), override:new Map(), loaded:{p:false,k:false,o:false}, kundeSel:null, kundeSok:"", leggTil:"", sugIdx:0, pending:0, unsubOrdre:null, confirmDel:null, nyttProdukt:false };
@@ -226,7 +233,7 @@ function visUke(){
     <button class="btn" data-act="hentFaste" ${faste.length?"":"disabled"} title="${faste.map(k=>esc(k.navn)).join(", ")}">Hent faste ordre${faste.length?` (${faste.length})`:""}</button>
     <button class="btn" data-act="kopierForrige" title="Lager ordre for kundene fra forrige uke med samme varer og antall. Kunder som allerede har ordre denne uka, hoppes over.">Kopier forrige uke</button>
     <label class="btn" title="Last opp ukelista fra Word (.docx). Du ser forslaget før noe lagres.">Importer Word-liste<input type="file" id="wordFil" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden></label>
-    <button class="btn" data-act="unimicro" ${ordre.length?"":"disabled"} title="Lager en Excel-fil i Unimicros importmal for ordre. Ordre med status Fakturert tas ikke med.">Ordre til Unimicro (Excel)</button>
+    <button class="btn" data-act="unimicro" ${ordre.length?"":"disabled"} title="Lager en Excel-fil i Unimicros importmal for ordre. Bare ordre som faktureres i Unimicro tas med (ikke ASKO/Dagfinn, Dyrket, interne eller smaksprøver), og ikke ordre med status Fakturert.">Ordre til Unimicro (Excel)</button>
     <button class="btn danger ghost" data-act="tomUke" ${ordre.length?"":"disabled"}>${S.confirmTom?`Trykk igjen for å slette ${ordre.length} ordre`:"Tøm uka"}</button>
   </div>
   ${S.kunLes?`<p class="notice"><b>Lesetilgang.</b> Du kan se ukas ordre og ysterilista, men ikke endre noe.</p>`:""}
@@ -278,7 +285,7 @@ function visOrdre(o){
   const under=[o.transport, o.sendes?`sendes ${dmy(o.sendes)}`:"", o.bestnr?`best.nr ${o.bestnr}`:""].filter(Boolean).join(" · ");
   let h=`<article class="card" id="o-${esc(o.id)}">
   <div class="ohead" data-act="toggle" data-id="${esc(o.id)}">
-    <div class="name">${esc(o.kundeNavn||k?.navn||"Ukjent kunde")}<small>${esc(under||"Ingen transport valgt")}${o.kilde==="fast"?" · fast ordre":""}</small></div>
+    <div class="name">${esc(o.kundeNavn||k?.navn||"Ukjent kunde")}<small>${esc(under||"Ingen transport valgt")}${o.kilde==="fast"?" · fast ordre":""}${ordreFakt(o)!=="unimicro"?` · <span class="fakt fakt-${esc(ordreFakt(o))}">${ordreFakt(o)==="ikke"?"faktureres ikke":esc(faktNavn(ordreFakt(o)))}</span>`:""}</small></div>
     ${!åpen && S.lagret.get(o.id)?.st==="ok" ? lagretTekst(o.id) : !åpen && S.lagret.get(o.id)?.st==="feil" ? lagretTekst(o.id) : ""}
     <span class="hint">${nf(kg,1)} kg</span>
     <span class="pill st-${st}">${esc((STATUS.find(s=>s[0]===st)||[,st])[1])}</span>
@@ -305,6 +312,7 @@ function visOrdre(o){
       <label class="f">Produksjonsdato<input type="date" class="txt" id="p-${esc(o.id)}" data-act="felt" data-f="prodDato" data-id="${esc(o.id)}" value="${esc(o.prodDato||"")}"></label>
       <label class="f">Bestillingsnr.<input class="txt" id="n-${esc(o.id)}" data-act="felt" data-f="bestnr" data-id="${esc(o.id)}" value="${esc(o.bestnr||"")}"></label>
       <label class="f">Status<select class="txt" id="st-${esc(o.id)}" data-act="felt" data-f="status" data-id="${esc(o.id)}">${STATUS.map(([v,l])=>`<option value="${v}" ${st===v?"selected":""}>${l}</option>`).join("")}</select></label>
+      <label class="f">Fakturering<select class="txt" id="fk-${esc(o.id)}" data-act="felt" data-f="fakturering" data-id="${esc(o.id)}"><option value="" ${o.fakturering?"":"selected"}>Som kunden (${esc(faktNavn(kundeFakt(k)))})</option>${FAKTURERING.map(([v,l])=>`<option value="${v}" ${o.fakturering===v?"selected":""}>${esc(l)}</option>`).join("")}</select></label>
       <label class="f wide">Merknad til ysteriet<input class="txt" id="m-${esc(o.id)}" data-act="felt" data-f="merknad" data-id="${esc(o.id)}" value="${esc(o.merknad||"")}" placeholder="${esc(k?.merknad||"")}"></label>
     </div>
     ${S.kunLes?"":`<div class="actions lagrerad"><button class="btn primary lagre" data-act="lagreOrdre" data-id="${esc(o.id)}">Lagre</button>${lagretTekst(o.id)}<span class="hint">Endringer lagres også av seg selv. «Lagre» bekrefter og lukker ordren.</span></div>`}
@@ -373,6 +381,7 @@ function kundeSkjema(k){
     <h4>Levering</h4>
     <div class="row">${fi("levNavn","Leveres til (navn)","placeholder='Samme som kunde'")}<label class="f">Leveringsadresse<input class="txt" id="kf-levAdresse" data-f="levAdresse" value="${esc(k.levAdresse||"")}" placeholder="Gate, postnr. sted"></label>
       <label class="f">Transport<select class="txt" id="kf-transport" data-f="transport"><option value="">Ikke valgt</option>${transportValg(k.transport)}</select></label>${fi("leveringsdag","Fast leveringsdag","placeholder='f.eks. tirsdag'")}
+      <label class="f">Faktureres via<select class="txt" id="kf-fakturering" data-f="fakturering"><option value="" ${k.fakturering?"":"selected"}>Automatisk (${esc(faktNavn(kundeFakt({...k,fakturering:""})))})</option>${FAKTURERING.map(([v,l])=>`<option value="${v}" ${k.fakturering===v?"selected":""}>${esc(l)}</option>`).join("")}</select></label>
       <label class="f">Bestiller antall i<select class="txt" id="kf-antallI" data-f="antallI"><option value="" ${k.antallI==="dp"?"":"selected"}>Beger / stk (løse)</option><option value="dp" ${k.antallI==="dp"?"selected":""}>D-pak</option></select></label></div>
     <label class="chk"><input type="checkbox" id="kf-cmr" data-f="cmr" ${k.cmr?"checked":""}> Trenger CMR</label>
     <label class="f">Instruks på CMR<input class="txt" id="kf-instruks" data-f="instruks" value="${esc(k.instruks||"")}" placeholder="f.eks. Kjølevare - behandles forsiktig"></label>
@@ -834,7 +843,10 @@ function lastSkript(src){ return new Promise((ok,nei)=>{ if(window.XLSX) return 
    Ordrenr lages som siste siffer i året + uke + løpenr (uke 43 i 2026 gir 64301, 64302 …), innenfor Unimicros ordreserie 1–199 999. */
 async function lastNedUnimicro(){
   const u=uke();
-  const ordre=[...S.ordre].filter(o=>(o.status||"ny")!=="fakturert" && linjer(o).length).sort((a,b)=>(a.kundeNavn||"").localeCompare(b.kundeNavn||"","nb"));
+  const kandidater=[...S.ordre].filter(o=>(o.status||"ny")!=="fakturert" && linjer(o).length);
+  const andre=kandidater.filter(o=>ordreFakt(o)!=="unimicro");
+  const ordre=kandidater.filter(o=>ordreFakt(o)==="unimicro").sort((a,b)=>(a.kundeNavn||"").localeCompare(b.kundeNavn||"","nb"));
+  if(!ordre.length){ toast(`Ingen ordre skal faktureres i Unimicro denne uka${andre.length?` (${andre.length} faktureres andre steder eller ikke)`:""}.`); return; }
   const utenNr=ordre.filter(o=>!kunde(o.kundeId)?.kundenr);
   if(utenNr.length){ toast(`Mangler Unimicro-kundenummer: ${utenNr.map(o=>o.kundeNavn).join(", ")}. Legg det inn på kunden først.`); return; }
   const utenPris=new Set(); ordre.forEach(o=>linjer(o).forEach(l=>{ if(prisFor(kunde(o.kundeId),l.varenr)===null) utenPris.add(l.p?.kort||l.varenr); }));
@@ -856,7 +868,9 @@ async function lastNedUnimicro(){
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Data");
   const data=XLSX.write(wb,{bookType:"xlsx",type:"array"});
   lagre(`Unimicro ordre uke ${u.w}.xlsx`, new Blob([data],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
-  toast(`${ordre.length} ordre med ${rader.length-1} linjer er lagt i fila. Importer den i Unimicro.`);
+  const grupper={}; andre.forEach(o=>{ const f=ordreFakt(o); (grupper[f]=grupper[f]||[]).push(o.kundeNavn); });
+  const ikkeMed=Object.entries(grupper).map(([f,n])=>`${f==="ikke"?"Faktureres ikke":faktNavn(f)}: ${n.join(", ")}`).join(". ");
+  toast(`${ordre.length} ordre med ${rader.length-1} linjer er lagt i fila. Importer den i Unimicro.${ikkeMed?` Ikke med – ${ikkeMed}.`:""}`);
 }
 function lastNedCSV(){
   const u=uke(); const rader=[["Uke","Kundenr","Kunde","Orgnr","Sendes","Bestillingsnr","Varenr","Vare","Antall","Status"]];

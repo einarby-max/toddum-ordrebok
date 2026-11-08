@@ -181,7 +181,7 @@ const Prod = (() => {
   }
   function visLogg(y) {
     const l = y.logg && typeof y.logg === "object" ? y.logg : {};
-    const inp = (r, f, ph, mode) => `<input class="txt" id="pl-${r}-${f}" data-pl="${r}|${f}" ${mode ? `inputmode="${mode}"` : ""} placeholder="${ph}" value="${esc((l[r] || {})[f] || "")}" style="width:${f === "mengde" ? 52 : 42}px;font-size:15px">`;
+    const inp = (r, f, ph, mode) => `<input class="txt" id="pl-${r}-${f}" data-pl="${r}|${f}" ${mode ? `inputmode="${mode}"` : ""} placeholder="${ph}" value="${esc((l[r] || {})[f] || "")}" style="width:${f === "mengde" ? 52 : f === "merk" ? 170 : 42}px;font-size:15px">`;
     return `<h4>2. Ystelogg</h4>
       <div class="row">
         <label class="f">Type ost i dag<input class="txt" id="py-osteType" data-pf="osteType" list="pr-oster" value="${esc(y.osteType || "")}" placeholder="f.eks. Mozzarella"></label>
@@ -191,10 +191,10 @@ const Prod = (() => {
         <label class="f">Temp. når varmen slås av (°C)<input class="txt" id="py-tempVarmeAv" data-pf="tempVarmeAv" inputmode="decimal" value="${esc(y.tempVarmeAv || "")}"></label>
       </div>
       <datalist id="pr-oster">${OSTER.map(o => `<option value="${o}">`).join("")}</datalist>
-      <div class="tablewrap"><table class="grid ylogg"><thead><tr><th>Trinn</th><th>Mengde</th><th>Kl.</th><th>Temp °C</th><th>pH</th></tr></thead><tbody>
-      ${LOGG.map(([r, n]) => `<tr><td>${esc(n)}</td><td>${inp(r, "mengde", r === "kultur" ? "type" : "")}</td><td><div style="display:flex;gap:4px">${inp(r, "kl", "kl.", "decimal")}<button type="button" class="btn sm" data-act="prNaa" data-r="${r}" title="Sett klokkeslett nå" style="padding:4px 6px">Nå</button></div></td><td>${inp(r, "temp", "", "decimal")}</td><td>${inp(r, "ph", "", "decimal")}</td></tr>`).join("")}
+      <div class="tablewrap"><table class="grid ylogg"><thead><tr><th>Trinn</th><th>Mengde</th><th>Kl.</th><th>Temp °C</th><th>pH</th><th>Kommentar / avvik</th></tr></thead><tbody>
+      ${LOGG.map(([r, n]) => `<tr><td>${esc(n)}</td><td>${inp(r, "mengde", r === "kultur" ? "type" : "")}</td><td><div style="display:flex;gap:4px">${inp(r, "kl", "kl.", "decimal")}<button type="button" class="btn sm" data-act="prNaa" data-r="${r}" title="Sett klokkeslett nå" style="padding:4px 6px">Nå</button></div></td><td>${inp(r, "temp", "", "decimal")}</td><td>${inp(r, "ph", "", "decimal")}</td><td>${inp(r, "merk", "")}</td></tr>`).join("")}
       </tbody></table></div>
-      <p class="hint">Fyll inn underveis. Trykk «Nå» for å sette klokkeslettet. Alt lagres med en gang.</p>`;
+      <p class="hint">Fyll inn underveis. Trykk «Nå» for å sette klokkeslettet. Skriv avvik eller kommentarer til hvert trinn i siste kolonne. Alt lagres med en gang.</p>`;
   }
   function visInn(y) {
     const kilder = P().ystinger.filter(z => z.id !== y.id && tall(z.overfortUtKg) > 0 && (restUt(z) > 0.05 || arr(y.overfortInn).some(x => x.fra === z.id)) && (z.dato || "") <= (y.dato || "9"));
