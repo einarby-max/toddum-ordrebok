@@ -80,7 +80,11 @@ async function lagreKnapp(id){
   catch(e){ toast(errMsg(e)+" Prøv å trykke Lagre igjen."); render(); }
 }
 function lagretTekst(id){ const s=S.lagret.get(id); if(!s) return `<span class="lst ok">✓ Lagret</span>`; if(s.st==="lagrer") return `<span class="lst">Lagrer …</span>`; if(s.st==="feil") return `<span class="lst feil">Ikke lagret – trykk Lagre</span>`; return `<span class="lst ok">✓ Lagret kl. ${pad(s.tid.getHours())}.${pad(s.tid.getMinutes())}</span>`; }
-function visSync(){ const el=$("#sync"); if(!el) return; const st = !S.db ? "" : S.pending? "Lagrer …" : "Lagret i SharePoint"; el.innerHTML = S.bruker ? `<span>${esc(st)}</span><span class="who">${esc(S.bruker.navn)} · <button class="linkbtn" id="loggUt">Logg ut</button></span>` : esc(st); const lo=$("#loggUt"); if(lo) lo.onclick=()=>Store.loggUt(); }
+function visSync(){ const el=$("#sync"); if(!el) return; const st = !S.db ? "" : S.pending? "Lagrer …" : "Lagret i SharePoint"; const inst = installKlar ? ` · <button class="linkbtn" id="installer">Installer som app</button>` : ""; el.innerHTML = S.bruker ? `<span>${esc(st)}</span><span class="who">${esc(S.bruker.navn)} · <button class="linkbtn" id="loggUt">Logg ut</button>${inst}</span>` : esc(st)+inst; const lo=$("#loggUt"); if(lo) lo.onclick=()=>Store.loggUt(); const ib=$("#installer"); if(ib) ib.onclick=async()=>{ const e=installKlar; installKlar=null; visSync(); try{ await e.prompt(); }catch(_){} }; }
+/* Nettleseren tilbyr installasjon bare når appen ikke allerede er installert på denne maskinen/profilen. Da vises knappen «Installer som app». */
+let installKlar=null;
+window.addEventListener("beforeinstallprompt",e=>{ e.preventDefault(); installKlar=e; visSync(); });
+window.addEventListener("appinstalled",()=>{ installKlar=null; visSync(); toast("Ordreboka er installert som app."); });
 
 /* ---------- oppstart ---------- */
 async function start(){
