@@ -318,9 +318,9 @@ function lagrePakk(form){
   const info={ tid:new Date().toISOString(), av:S.bruker?.navn||"", rom:document.getElementById(`pkr-${o.id}`)?.value||"r1", fakturer:document.getElementById(`pkf-${o.id}`)?.value||"sendt", avvik };
   const n={...o, linjer:lin, sendtInfo:info, status:(o.status==="fakturert"?"fakturert":"sendt"), sendes:document.getElementById(`pkd-${o.id}`)?.value||o.sendes||iDag()};
   const avvikN=Object.entries(lin).filter(([v,l])=>(l.sendt??l.antall)!==(l.antall||0)).length;
-  S.utkast.delete("pakkForm|"+o.id); S.pakk=null;
+  S.pakk=null;
   lagreOrdre(n).then(()=>window.Lager&&Lager.registrerSendt(n)).then(()=>toast(`✓ ${o.kundeNavn} er registrert som sendt${avvikN?` med ${avvikN} avvik`:""}.`)).catch(()=>{});
-  render();
+  render(); S.utkast.delete("pakkForm|"+o.id);
 }
 function angrePakk(id){
   const o=finnOrdre(id); if(!o) return;
@@ -571,7 +571,7 @@ function klikk(e){
   else if(a==="csv") lastNedCSV();
   else if(a==="unimicro") lastNedUnimicro();
   else if(a==="pakk"){ S.pakk=id; render(); setTimeout(()=>document.getElementById("pakkForm")?.scrollIntoView({block:"nearest",behavior:"smooth"}),30); }
-  else if(a==="pakkAvbryt"){ if(S.pakk) S.utkast.delete("pakkForm|"+S.pakk); S.pakk=null; render(); }
+  else if(a==="pakkAvbryt"){ const k=S.pakk; S.pakk=null; render(); if(k) S.utkast.delete("pakkForm|"+k); }
   else if(a==="pakkAngre"){ if(S.confirmAngre===id){ S.confirmAngre=null; angrePakk(id); } else { S.confirmAngre=id; toast("Trykk «Angre sending» igjen for å bekrefte."); setTimeout(()=>{ if(S.confirmAngre===id) S.confirmAngre=null; },4000); } }
   else if(a==="pakkseddel"){ forberedVindu(); pakkseddel(finnOrdre(id)); }
   else if(a==="cmr"){ forberedVindu(); cmr(finnOrdre(id)); }
@@ -613,6 +613,7 @@ function parseAntall(s,p,dpModus){
 function visAntall(a,o,p){ if(!a) return ""; return iDP(o,p) ? String(Math.round(a/p.perDP*100)/100).replace(".",",") : String(a).replace(".",","); }
 function endring(e){
   if(Prod.endring(e)) return;
+  if(window.Lager && Lager.endring(e)) return;
   const t=e.target, a=t.dataset.act, id=t.dataset.id;
   if(t.id==="importFil" && t.files && t.files[0]){
     const fil=t.files[0];

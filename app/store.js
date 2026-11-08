@@ -26,6 +26,8 @@ const Store = (() => {
       ["fra",T],["til",T],["filnavn",T],["antall",N],["min",N],["max",N],["over",N],["data",J],["lastetOpp",T],["av",T] ] },
     lager: { navn: "Ordrebok Lager", nokkel: "id", valgfri: true, kol: [
       ["tid",T],["dato",T],["varenr",T],["antall",N],["rom",T],["type",T],["ref",T],["lot",T],["av",T],["merknad",M] ] },
+    lagervarer: { navn: "Ordrebok Lagervarer", nokkel: "id", valgfri: true, kol: [
+      ["navn",T],["kategori",T],["enhet",T],["rom",T],["minimum",N],["leverandor",T],["ledetidUker",N],["kobling",T],["perEnhet",N],["merknad",M],["aktiv",B],["sort",N] ] },
     innst: { navn: "Ordrebok Innstillinger", nokkel: "id", valgfri: true, kol: [ ["data",J] ] },
     ordre: { navn: "Ordrebok Ordre", nokkel: "id", kol: [
       ["uke",T,{indexed:true}],["kundeId",T],["kundeNavn",T],["linjer",J],["transport",T],["sendes",T],["prodDato",T],["bestnr",T],
@@ -33,7 +35,7 @@ const Store = (() => {
   };
   const SCOPES = ["Sites.Manage.All"];
   let app, konto, siteId;
-  const listeId = {}, kjente = {}, spId = { produkter:{}, kunder:{}, ordre:{}, transport:{}, melk:{}, ysting:{}, temperatur:{}, innst:{}, svinn:{}, lager:{} }, kjeder = {};
+  const listeId = {}, kjente = {}, spId = { produkter:{}, kunder:{}, ordre:{}, transport:{}, melk:{}, ysting:{}, temperatur:{}, innst:{}, svinn:{}, lager:{}, lagervarer:{} }, kjeder = {};
 
   function basisUrl(){ return location.origin + location.pathname.replace(/[^/]*$/, ""); }
   function feil(melding, status, kode){ const e = new Error(melding); e.status = status; e.code = kode; return e; }
