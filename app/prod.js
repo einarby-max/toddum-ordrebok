@@ -303,18 +303,26 @@ const Prod = (() => {
     return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" role="img" aria-label="Strømpris i dag">${g}</svg><p class="hint">Gul = nå. Billigste time i dag: ${(() => { const m = raw.reduce((a, x) => x.NOK_per_kWh < a.NOK_per_kWh ? x : a); const t = new Date(m.time_start); return `kl. ${pad(t.getHours())}.${pad(t.getMinutes())} (${nf(m.NOK_per_kWh, 2)} kr)`; })()}</p>`;
   }
 
+  function lokalTid(d) { const z = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`; }
   function visMelk() {
     const p = P(), siste = [...p.melk].sort((a, b) => (b.tid || "").localeCompare(a.tid || "")).slice(0, 10);
     return `<form class="card form" id="prMelkForm" data-bevar="1">
       <h3>Hent melk fra fjøset</h3>
-      <p class="hint">Ta bilde av displayet på melketanken, og skriv inn liter og temperatur. Melken kobles automatisk til neste ysting, og Silje ser den her i stedet for på sms.</p>
-      <label class="btn prfil" style="justify-content:center;padding:14px">📷 ${p.melkBilde ? "Ta nytt bilde" : "Ta bilde av tankdisplayet"}<input type="file" data-prfoto="1" accept="image/*" capture="environment" hidden></label>
+      <p class="hint">Ta bilde av displayet på melketanken, eller last opp et bilde du har fått på SMS. Skriv inn liter og temperatur. Melken kobles automatisk til ystingen den dagen.</p>
+      <div class="row" style="gap:8px">
+        <label class="btn prfil" style="justify-content:center;padding:14px;flex:1">📷 Ta bilde<input type="file" data-prfoto="1" accept="image/*" capture="environment" hidden></label>
+        <label class="btn prfil" style="justify-content:center;padding:14px;flex:1">🖼 Last opp bilde<input type="file" data-prfoto="2" accept="image/*" hidden></label>
+      </div>
       ${p.melkBildeUrl ? `<img src="${p.melkBildeUrl}" alt="Bilde av tankdisplayet" style="max-height:220px;border-radius:8px;object-fit:contain;background:var(--sunk)">` : ""}
       <div class="row">
         <label class="f">Liter<input class="txt" id="prMelkLiter" inputmode="decimal" required placeholder="f.eks. 1800" style="font-size:22px"></label>
         <label class="f">Temperatur i tanken (°C)<input class="txt" id="prMelkTemp" inputmode="decimal" placeholder="f.eks. 3,8" style="font-size:22px"></label>
       </div>
-      <label class="f">Merknad<input class="txt" id="prMelkMerk" placeholder="valgfritt"></label>
+      <div class="row">
+        <label class="f">Hentet<input class="txt" type="datetime-local" id="prMelkTid" value="${esc(p.melkTid || lokalTid(new Date()))}"></label>
+        <label class="f">Hentet av<input class="txt" id="prMelkAv" value="${esc(p.melkAv || brukerNavn())}" placeholder="navn"></label>
+      </div>
+      <label class="f">Merknad<input class="txt" id="prMelkMerk" placeholder="valgfritt, f.eks. bilde fra sms"></label>
       <div class="actions"><button class="btn primary lagre" type="submit">Registrer melk</button></div>
     </form>
     <h3 style="font-family:var(--f-display);font-weight:400;margin:18px 0 8px">Siste melkehentinger</h3>
@@ -574,7 +582,8 @@ const Prod = (() => {
   }
   function endring(e) {
     const t = e.target, p = P();
-    if (t.dataset.prfoto && t.files && t.files[0]) { const f = t.files[0]; krympBilde(f).then(b => { p.melkBilde = b; if (p.melkBildeUrl) URL.revokeObjectURL(p.melkBildeUrl); p.melkBildeUrl = URL.createObjectURL(b); render(); }).catch(() => { p.melkBilde = f; p.melkBildeUrl = URL.createObjectURL(f); render(); }); return true; }
+    if (t.dataset.prfoto && t.files && t.files[0]) { const f = t.files[0];
+      if (t.dataset.prfoto === "2" && f.lastModified && Date.now() - f.lastModified < 5 * 864e5) { p.melkTid = lokalTid(new Date(f.lastModified)); const el = document.getElementById("prMelkTid"); if (el) el.value = p.melkTid; } krympBilde(f).then(b => { p.melkBilde = b; if (p.melkBildeUrl) URL.revokeObjectURL(p.melkBildeUrl); p.melkBildeUrl = URL.createObjectURL(b); render(); }).catch(() => { p.melkBilde = f; p.melkBildeUrl = URL.createObjectURL(f); render(); }); return true; }
     if (t.id === "prTempFil" && t.files && t.files[0]) { const f = t.files[0]; t.value = ""; lesLoggfil(f).catch(err => toast("Klarte ikke å lese loggfila: " + (err.message || err))); return true; }
     if (t.id === "pk-type") { p.kType = t.value; return true; }
     if (t.id === "pk-verdi") { p.kVerdi = t.value; return true; }
@@ -599,14 +608,15 @@ const Prod = (() => {
       const liter = tall($("#prMelkLiter").value), tempS = $("#prMelkTemp").value.trim();
       if (!(liter > 0)) { toast("Skriv antall liter."); return true; }
       const knapp = form.querySelector("[type=submit]"); knapp.disabled = true; knapp.textContent = "Lagrer …";
-      const tid = nå(), id = nyId("melk");
-      const m = { id, tid, dato: tid.slice(0, 10), liter, temp: tempS === "" ? "" : tall(tempS), hentetAv: brukerNavn(), bilde: "", ystingId: "", merknad: $("#prMelkMerk").value.trim() };
-      /* Kobles bare automatisk når det er nøyaktig én åpen ysting i dag og den ikke har melk ennå. Ellers står melken klar til neste ysting. */
-      const iDagÅpne = åpne().filter(y => y.dato === iDag()); const aktiv = iDagÅpne.length === 1 && !tall(iDagÅpne[0].melkLiter) ? iDagÅpne[0] : null; if (aktiv) m.ystingId = aktiv.id;
-      const opp = p.melkBilde ? Store.lastOppFil(`Ysteri/Melkehenting/${tid.slice(0, 10)} ${klokke(tid).replace(".", "")} ${liter} l.jpg`, p.melkBilde).then(r => r.url).catch(e => { toast("Bildet ble ikke lastet opp" + (e.status === 403 ? " (mangler tilgang)" : "") + ". Melken registreres uten bilde."); return ""; }) : Promise.resolve("");
+      const tv = $("#prMelkTid")?.value, tidD = tv ? new Date(tv) : new Date(), tid = isNaN(tidD) ? nå() : tidD.toISOString(), id = nyId("melk");
+      const dato = tv ? tv.slice(0, 10) : iDag();
+      const m = { id, tid, dato, liter, temp: tempS === "" ? "" : tall(tempS), hentetAv: ($("#prMelkAv")?.value || "").trim() || brukerNavn(), bilde: "", ystingId: "", merknad: $("#prMelkMerk").value.trim() };
+      /* Kobles bare automatisk når det er nøyaktig én åpen ysting den dagen og den ikke har melk ennå. Ellers står melken klar til neste ysting. */
+      const iDagÅpne = åpne().filter(y => y.dato === dato); const aktiv = iDagÅpne.length === 1 && !tall(iDagÅpne[0].melkLiter) ? iDagÅpne[0] : null; if (aktiv) m.ystingId = aktiv.id;
+      const opp = p.melkBilde ? Store.lastOppFil(`Ysteri/Melkehenting/${dato} ${klokke(tid).replace(".", "")} ${liter} l.jpg`, p.melkBilde).then(r => r.url).catch(e => { toast("Bildet ble ikke lastet opp" + (e.status === 403 ? " (mangler tilgang)" : "") + ". Melken registreres uten bilde."); return ""; }) : Promise.resolve("");
       opp.then(url => { m.bilde = url; return lagreMelk(m); }).then(() => {
         if (aktiv) { const n = { ...aktiv, melkIds: [...arr(aktiv.melkIds), id], melkLiter: tall(aktiv.melkLiter) + liter }; lagreYsting(n, true); if (p.edit && p.edit.id === aktiv.id) p.edit = n; }
-        p.melkBilde = null; if (p.melkBildeUrl) URL.revokeObjectURL(p.melkBildeUrl); p.melkBildeUrl = ""; form.reset(); S.utkast.delete("prMelkForm|");
+        p.melkBilde = null; p.melkTid = ""; p.melkAv = ""; if (p.melkBildeUrl) URL.revokeObjectURL(p.melkBildeUrl); p.melkBildeUrl = ""; form.reset(); S.utkast.delete("prMelkForm|");
         const varm = m.temp !== "" && m.temp > sats().melkTempGrense;
         toast(`✓ ${nf(liter)} liter er registrert${aktiv ? ` på ystingen ${dmy(aktiv.dato)}` : ""}.${varm ? ` OBS: ${nf(m.temp, 1)} °C er over ${nf(sats().melkTempGrense)} °C.` : ""}`);
         p.pv = "oversikt"; render();
