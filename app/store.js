@@ -10,7 +10,7 @@ const Store = (() => {
     kunder: { navn: "Ordrebok Kunder", nokkel: "id", kol: [
       ["navn",T],["kundenr",T],["orgnr",T],["adresse",T],["adresse2",T],["postnr",T],["poststed",T],["land",T],["epost",T],["telefon",T],
       ["kontakt",T],["kontaktEpost",T],["kontaktTlf",T],["levNavn",T],["levAdresse",M],["transport",T],["cmr",B],["leveringsdag",T],
-      ["merknad",M],["instruks",M],["fastFrekvens",T],["fast",J],["inaktiv",B],["priser",J],["antallI",T],["fakturering",T,{ny:true}] ] },
+      ["merknad",M],["instruks",M],["fastFrekvens",T],["fast",J],["inaktiv",B],["priser",J],["antallI",T],["fakturering",T,{ny:true}],["fakturaTil",T,{ny:true}] ] },
     transport: { navn: "Ordrebok Transport", nokkel: "id", valgfri: true, kol: [
       ["navn",T],["adresse",M],["kontakt",T],["telefon",T],["epost",T],["cmr",B],["merknad",M],["aktiv",B],["sort",N],["nettside",T] ] },
     melk: { navn: "Ordrebok Melkehenting", nokkel: "id", valgfri: true, kol: [

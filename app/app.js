@@ -9,7 +9,9 @@ const STATUS = [["ny","Ny"],["produsert","Produsert"],["sendt","Sendt"],["faktur
 const FAKTURERING = [["unimicro","Unimicro"],["dagfinn","Dagfinn (ASKO)"],["dyrket","Dyrket-portalen"],["internt","Internt (månedlig)"],["ikke","Faktureres ikke (smaksprøver, stand, salgsarbeid)"]];
 const faktNavn = v => (FAKTURERING.find(f=>f[0]===v)||[,v])[1];
 /* Standard når kunden ikke har valgt: ASKO via Dagfinn, Dyrket via portalen, Gårdsbutikken internt, kunder uten kundenummer faktureres ikke. */
-function kundeFakt(k){ if(!k) return "ikke"; if(k.fakturering) return k.fakturering; const n=(k.navn||"").toLowerCase();
+/* Kunder som faktureres via en grossist (f.eks. Coop-butikker via Wulff & Co): ordren står på butikken, men fakturaen går til grossisten. */
+function betaler(k){ if(!k||!k.fakturaTil) return k; const b=kunde(k.fakturaTil); return b&&b.id!==k.id ? b : k; }
+function kundeFakt(k){ if(!k) return "ikke"; if(k.fakturering) return k.fakturering; const b=betaler(k); if(b!==k) return kundeFakt(b); const n=(k.navn||"").toLowerCase();
   if(/^asko\b/.test(n)) return "dagfinn"; if(/dyrket/.test(n)) return "dyrket"; if(k.kundenr==="100004"||/gårdsbutikk/.test(n)) return "internt"; return k.kundenr ? "unimicro" : "ikke"; }
 function ordreFakt(o){ return o.fakturering || kundeFakt(kunde(o.kundeId)); }
 const FREKVENS = [["ingen","Ingen fast ordre"],["hver","Hver uke"],["partall","Partallsuker"],["oddetall","Oddetallsuker"]];
@@ -334,7 +336,7 @@ function visOrdre(o){
   const under=[o.transport, o.sendes?`sendes ${dmy(o.sendes)}`:"", o.bestnr?`best.nr ${o.bestnr}`:""].filter(Boolean).join(" · ");
   let h=`<article class="card" id="o-${esc(o.id)}">
   <div class="ohead" data-act="toggle" data-id="${esc(o.id)}">
-    <div class="name">${esc(o.kundeNavn||k?.navn||"Ukjent kunde")}<small>${esc(under||"Ingen transport valgt")}${o.kilde==="fast"?" · fast ordre":""}${ordreFakt(o)!=="unimicro"?` · <span class="fakt fakt-${esc(ordreFakt(o))}">${ordreFakt(o)==="ikke"?"faktureres ikke":esc(faktNavn(ordreFakt(o)))}</span>`:""}</small></div>
+    <div class="name">${esc(o.kundeNavn||k?.navn||"Ukjent kunde")}<small>${esc(under||"Ingen transport valgt")}${o.kilde==="fast"?" · fast ordre":""}${betaler(k)!==k&&ordreFakt(o)==="unimicro"?` · <span class="fakt">faktureres til ${esc(betaler(k).navn)}</span>`:""}${ordreFakt(o)!=="unimicro"?` · <span class="fakt fakt-${esc(ordreFakt(o))}">${ordreFakt(o)==="ikke"?"faktureres ikke":esc(faktNavn(ordreFakt(o)))}</span>`:""}</small></div>
     ${!åpen && S.lagret.get(o.id)?.st==="ok" ? lagretTekst(o.id) : !åpen && S.lagret.get(o.id)?.st==="feil" ? lagretTekst(o.id) : ""}
     <span class="hint">${nf(kg,1)} kg</span>
     <span class="pill st-${st}">${esc((STATUS.find(s=>s[0]===st)||[,st])[1])}</span>
@@ -432,6 +434,7 @@ function kundeSkjema(k){
     <h4>Levering</h4>
     <div class="row">${fi("levNavn","Leveres til (navn)","placeholder='Samme som kunde'")}<label class="f">Leveringsadresse<input class="txt" id="kf-levAdresse" data-f="levAdresse" value="${esc(k.levAdresse||"")}" placeholder="Gate, postnr. sted"></label>
       <label class="f">Transport<select class="txt" id="kf-transport" data-f="transport"><option value="">Ikke valgt</option>${transportValg(k.transport)}</select></label>${fi("leveringsdag","Fast leveringsdag","placeholder='f.eks. tirsdag'")}
+      <label class="f">Faktureres til<select class="txt" id="kf-fakturaTil" data-f="fakturaTil"><option value="" ${k.fakturaTil?"":"selected"}>Kunden selv</option>${S.kunder.filter(x=>x.id!==k.id&&x.kundenr&&!x.inaktiv).sort((a,b)=>(a.navn||"").localeCompare(b.navn||"","nb")).map(x=>`<option value="${esc(x.id)}" ${k.fakturaTil===x.id?"selected":""}>${esc(x.navn)} (${esc(x.kundenr)})</option>`).join("")}</select></label>
       <label class="f">Faktureres via<select class="txt" id="kf-fakturering" data-f="fakturering"><option value="" ${k.fakturering?"":"selected"}>Automatisk (${esc(faktNavn(kundeFakt({...k,fakturering:""})))})</option>${FAKTURERING.map(([v,l])=>`<option value="${v}" ${k.fakturering===v?"selected":""}>${esc(l)}</option>`).join("")}</select></label>
       <label class="f">Bestiller antall i<select class="txt" id="kf-antallI" data-f="antallI"><option value="" ${k.antallI==="dp"?"":"selected"}>Beger / stk (løse)</option><option value="dp" ${k.antallI==="dp"?"selected":""}>D-pak</option></select></label></div>
     <label class="chk"><input type="checkbox" id="kf-cmr" data-f="cmr" ${k.cmr?"checked":""}> Trenger CMR</label>
@@ -899,15 +902,17 @@ function prisFor(k,varenr){ const kp=k?.priser?.[varenr]; if(kp>0) return kp; co
 function lastSkript(src){ return new Promise((ok,nei)=>{ if(window.XLSX) return ok(); const s=document.createElement("script"); s.src=src; s.onload=ok; s.onerror=()=>nei(new Error("Fant ikke "+src)); document.head.appendChild(s); }); }
 /* Ordre til Unimicro: én rad per varelinje, kolonner som i Unimicros importmal (OrderTemplate.xlsx).
    Ordrenr lages som siste siffer i året + uke + løpenr (uke 43 i 2026 gir 64301, 64302 …), innenfor Unimicros ordreserie 1–199 999. */
+/* Pris på faktura: butikkens egen kundepris, ellers betalerens (grossistens) kundepris, ellers listepris. */
+function prisFakt(k,v){ const kp=k?.priser?.[v]; if(kp!=null&&kp!=="") return Number(kp); return prisFor(betaler(k),v); }
 async function lastNedUnimicro(){
   const u=uke();
   const kandidater=[...S.ordre].filter(o=>(o.status||"ny")!=="fakturert" && linjerFaktura(o).length);
   const andre=kandidater.filter(o=>ordreFakt(o)!=="unimicro");
   const ordre=kandidater.filter(o=>ordreFakt(o)==="unimicro").sort((a,b)=>(a.kundeNavn||"").localeCompare(b.kundeNavn||"","nb"));
   if(!ordre.length){ toast(`Ingen ordre skal faktureres i Unimicro denne uka${andre.length?` (${andre.length} faktureres andre steder eller ikke)`:""}.`); return; }
-  const utenNr=ordre.filter(o=>!kunde(o.kundeId)?.kundenr);
+  const utenNr=ordre.filter(o=>!betaler(kunde(o.kundeId))?.kundenr);
   if(utenNr.length){ toast(`Mangler Unimicro-kundenummer: ${utenNr.map(o=>o.kundeNavn).join(", ")}. Legg det inn på kunden først.`); return; }
-  const utenPris=new Set(); ordre.forEach(o=>linjerFaktura(o).forEach(l=>{ if(prisFor(kunde(o.kundeId),l.varenr)===null) utenPris.add(l.p?.kort||l.varenr); }));
+  const utenPris=new Set(); ordre.forEach(o=>linjerFaktura(o).forEach(l=>{ if(prisFakt(kunde(o.kundeId),l.varenr)===null) utenPris.add(l.p?.kort||l.varenr); }));
   if(utenPris.size){ toast(`Mangler pris på ${[...utenPris].join(", ")}. Legg inn pris under Produkter.`); return; }
   try { await lastSkript("vendor/xlsx.mini.min.js"); } catch(e){ toast("Klarte ikke å laste Excel-modulen. Sjekk nettforbindelsen."); return; }
   const H=["Ordrenr","Ordredato","Leveringsdato","Kundenr","Kundenavn","Vår referanse","Deres referanse","Hovedselger","Rekvisisjon","Leveringsadr.","Lev.postnr.","Lev.poststed","Varenr.","Varenavn","Antall","Pris eks. mva","Rabatt %","Prosjekt","Avdeling"];
@@ -918,7 +923,8 @@ async function lastNedUnimicro(){
     const k=kunde(o.kundeId); const nr=String((u.y%10)*10000+u.w*100+i+1);   /* f.eks. 64301 = 2026 uke 43 nr. 1. Unimicros ordreserie går til 199 999. */
     let adr=k.adresse||"", pnr=k.postnr||"", sted=k.poststed||"";
     if(k.levAdresse){ const l=k.levAdresse.split(/\n|,/).map(x=>x.trim()).filter(Boolean); const m=(l[l.length-1]||"").match(/^(\d{4})\s+(.+)$/); if(m){ pnr=m[1]; sted=m[2]; adr=l.slice(0,-1).join(", "); } else adr=l.join(", "); }
-    linjerFaktura(o).forEach(l=>rader.push([nr, idag, ddmmyy(o.sendes||o.prodDato||iDag()), Number(k.kundenr), k.navn, AVSENDER.ref, k.kontakt||"", "", o.bestnr||"", adr, pnr, sted, l.varenr, l.p?.navn||l.p?.kort||l.varenr, l.antall, prisFor(k,l.varenr), "", "", ""]));
+    const b=betaler(k), via=b!==k;
+    linjerFaktura(o).forEach(l=>rader.push([nr, idag, ddmmyy(o.sendes||o.prodDato||iDag()), Number(b.kundenr), b.navn, AVSENDER.ref, via?k.navn:(k.kontakt||""), "", o.bestnr||(via?k.navn:""), via&&!k.levAdresse&&!k.adresse?"":adr, pnr, sted, l.varenr, l.p?.navn||l.p?.kort||l.varenr, l.antall, prisFakt(k,l.varenr), "", "", ""]));
   });
   const ws=XLSX.utils.aoa_to_sheet(rader);
   for(let r=1;r<rader.length;r++){ for(const c of [0,1,2,12]){ const ref=XLSX.utils.encode_cell({r,c}); if(ws[ref]){ ws[ref].t="s"; ws[ref].v=String(ws[ref].v); ws[ref].z="@"; } } }
