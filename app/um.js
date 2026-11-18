@@ -91,17 +91,24 @@ const Um = (() => {
     }
     return res;
   }
-  /* Henter status for sendte ordre. 41001 kladd, 41002 registrert, 41003 delvis overført, 41004 overført til faktura, 41005 avsluttet. */
+  /* Henter status for sendte ordre. En ordre regnes som fakturert først når fakturaen den er overført til, er fakturert
+     (faktura-status 42002 eller høyere, ikke kladd 42001). Koblingen går via fakturalinjenes OrderItemId. */
   async function hentStatus(ordre) {
     if (!(await klar())) return;
-    const e = env(), sendt = ordre.filter(o => o.unimicro && o.unimicro.env === e && o.unimicro.id);
-    const res = { fakturert: [], uendret: 0, feil: [] };
+    const e = env(), sendt = ordre.filter(o => o.unimicro && o.unimicro.env === e && o.unimicro.id && (o.status || "ny") !== "fakturert");
+    const res = { fakturert: [], kladd: [], ikkeOverfort: 0, feil: [] };
     for (const o of sendt) {
       try {
-        const u = await get(`/api/biz/orders/${o.unimicro.id}?select=ID,OrderNumber,StatusCode`);
-        const st = u.StatusCode;
-        if ((st === 41004 || st === 41005) && (o.status || "ny") !== "fakturert") { await lagreOrdre({ ...o, status: "fakturert", unimicro: { ...o.unimicro, status: st } }); res.fakturert.push(o.kundeNavn); }
-        else res.uendret++;
+        const u = await get(`/api/biz/orders/${o.unimicro.id}?expand=Items&select=ID,StatusCode`);
+        const linje = (u.Items || [])[0];
+        if (!linje || u.StatusCode < 41003) { res.ikkeOverfort++; continue; }
+        const fl = await get(`/api/biz/invoiceitems?filter=${q("OrderItemId eq " + linje.ID)}&select=ID,CustomerInvoiceID`);
+        const invId = fl[0]?.CustomerInvoiceID; if (!invId) { res.ikkeOverfort++; continue; }
+        const inv = await get(`/api/biz/invoices/${invId}?select=ID,InvoiceNumber,StatusCode,TaxExclusiveAmount,InvoiceDate`);
+        if (inv.StatusCode >= 42002 && inv.InvoiceNumber) {
+          await lagreOrdre({ ...o, status: "fakturert", unimicro: { ...o.unimicro, fakturaId: inv.ID, fakturaNr: inv.InvoiceNumber, fakturaSum: inv.TaxExclusiveAmount, fakturaDato: inv.InvoiceDate } });
+          res.fakturert.push(`${o.kundeNavn} (faktura ${inv.InvoiceNumber})`);
+        } else res.kladd.push(o.kundeNavn);
       } catch (err) { res.feil.push(`${o.kundeNavn}: ${err.message}`); }
     }
     return res;

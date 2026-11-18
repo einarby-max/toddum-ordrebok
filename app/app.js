@@ -338,7 +338,7 @@ function visOrdre(o){
   const under=[o.transport, o.sendes?`sendes ${dmy(o.sendes)}`:"", o.bestnr?`best.nr ${o.bestnr}`:""].filter(Boolean).join(" · ");
   let h=`<article class="card" id="o-${esc(o.id)}">
   <div class="ohead" data-act="toggle" data-id="${esc(o.id)}">
-    <div class="name">${esc(o.kundeNavn||k?.navn||"Ukjent kunde")}<small>${esc(under||"Ingen transport valgt")}${o.kilde==="fast"?" · fast ordre":""}${o.unimicro&&o.unimicro.id?` · <span class="fakt">Unimicro${o.unimicro.env==="test"?" test":""} ordre ${esc(o.unimicro.nr)}</span>`:""}${betaler(k)!==k&&ordreFakt(o)==="unimicro"?` · <span class="fakt">faktureres til ${esc(betaler(k).navn)}</span>`:""}${ordreFakt(o)!=="unimicro"?` · <span class="fakt fakt-${esc(ordreFakt(o))}">${ordreFakt(o)==="ikke"?"faktureres ikke":esc(faktNavn(ordreFakt(o)))}</span>`:""}</small></div>
+    <div class="name">${esc(o.kundeNavn||k?.navn||"Ukjent kunde")}<small>${esc(under||"Ingen transport valgt")}${o.kilde==="fast"?" · fast ordre":""}${o.unimicro&&o.unimicro.id?` · <span class="fakt">Unimicro${o.unimicro.env==="test"?" test":""} ordre ${esc(o.unimicro.nr)}${o.unimicro.fakturaNr?`, faktura ${esc(o.unimicro.fakturaNr)}`:""}</span>`:""}${betaler(k)!==k&&ordreFakt(o)==="unimicro"?` · <span class="fakt">faktureres til ${esc(betaler(k).navn)}</span>`:""}${ordreFakt(o)!=="unimicro"?` · <span class="fakt fakt-${esc(ordreFakt(o))}">${ordreFakt(o)==="ikke"?"faktureres ikke":esc(faktNavn(ordreFakt(o)))}</span>`:""}</small></div>
     ${!åpen && S.lagret.get(o.id)?.st==="ok" ? lagretTekst(o.id) : !åpen && S.lagret.get(o.id)?.st==="feil" ? lagretTekst(o.id) : ""}
     <span class="hint">${nf(kg,1)} kg</span>
     <span class="pill st-${st}">${esc((STATUS.find(s=>s[0]===st)||[,st])[1])}</span>
@@ -958,7 +958,7 @@ async function sendTilUnimicro(){
   }catch(e){ toast(e.message); } finally { S.umTravel=false; render(); }
 }
 async function statusFraUnimicro(){
-  try{ const r=await Um.hentStatus(S.ordre); if(!r) return; toast(`${r.fakturert.length?`✓ Satt til Fakturert: ${r.fakturert.join(", ")}.`:"Ingen nye fakturaer i Unimicro."}${r.feil.length?` Feil: ${r.feil.join("; ")}`:""}`); }catch(e){ toast(e.message); }
+  try{ const r=await Um.hentStatus(S.ordre); if(!r) return; toast(`${r.fakturert.length?`✓ Satt til Fakturert: ${r.fakturert.join(", ")}.`:"Ingen nye fakturaer i Unimicro."}${r.kladd.length?` Fakturakladd, ikke fakturert ennå: ${r.kladd.join(", ")}.`:""}${r.feil.length?` Feil: ${r.feil.join("; ")}`:""}`); }catch(e){ toast(e.message); }
 }
 function lastNedCSV(){
   const u=uke(); const rader=[["Uke","Kundenr","Kunde","Orgnr","Sendes","Bestillingsnr","Varenr","Vare","Antall","Status"]];
