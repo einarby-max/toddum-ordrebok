@@ -83,6 +83,7 @@ async function callback() {
   const j = await r.json().catch(() => ({}));
   ss.del("um_verifier"); ss.del("um_state");
   if (!r.ok || !j.access_token) { ut({ feil: "Fikk ikke token", status: r.status, svar: j }); return; }
+  try { localStorage.setItem("um_tester", "1"); } catch (e) {}
   ss.set("um_token", j.access_token); ss.set("um_exp", String(Date.now() + (j.expires_in || 3600) * 1000));
   const tilbake = ss.get("um_return"); if (tilbake) { ss.del("um_return"); location.replace(tilbake); throw new Error("videresender"); }
 }

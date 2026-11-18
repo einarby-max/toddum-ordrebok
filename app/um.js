@@ -12,6 +12,12 @@ const Um = (() => {
   const token = () => { const t = ss.get("um_token"), e = Number(ss.get("um_exp") || 0); return t && e > Date.now() + 60000 ? t : null; };
   const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const tilfeldig = n => b64u(crypto.getRandomValues(new Uint8Array(n)));
+  /* Test skal aldri sette spor i ordreboka: i testmiljøet lagres koblingen ordre → Unimicro bare lokalt i denne nettleseren,
+     og status endres ikke. Bare produksjon skriver til ordrene i SharePoint. */
+  const ls = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} } };
+  const testLogg = () => { try { return JSON.parse(ls.get("um_test_ordre") || "{}"); } catch (e) { return {}; } };
+  const info = o => env() === "test" ? testLogg()[o.id] : (o.unimicro && o.unimicro.env === "prod" ? o.unimicro : null);
+  async function lagreInfo(o, i) { if (env() === "test") { const l = testLogg(); l[o.id] = i; ls.set("um_test_ordre", JSON.stringify(l)); } else await lagreOrdre({ ...o, unimicro: i }); }
   const callbackUrl = () => new URL("unimicro.html", location.href).href.split("?")[0].split("#")[0];
 
   async function loggInn() {
@@ -69,7 +75,7 @@ const Um = (() => {
     if (!(await klar())) return;
     const e = env(), o = await oppslag();
     if (!o.kontoId || !o.mvaId) throw new Error("Fant ikke konto 3040 eller mva-kode 31 i Unimicro.");
-    const nye = grunnlag.filter(g => !(g.o.unimicro && g.o.unimicro.env === e && g.o.unimicro.id));
+    const nye = grunnlag.filter(g => !(info(g.o) && info(g.o).id));
     const mangler = { prod: new Set(), kunder: new Set() };
     nye.forEach(g => { if (!o.kunder.has(String(g.b.kundenr))) mangler.kunder.add(g.b); g.linjer.forEach(l => { if (!o.prod.has(String(l.varenr))) mangler.prod.add(l.p || { varenr: l.varenr }); }); });
     if (mangler.prod.size || mangler.kunder.size) {
@@ -84,8 +90,8 @@ const Um = (() => {
           Items: g.linjer.map(l => ({ ProductID: o.prod.get(String(l.varenr)).ID, ItemText: l.navn, NumberOfItems: l.antall, PriceExVat: l.pris, DiscountPercent: l.rabatt || 0, VatTypeID: o.mvaId, AccountID: o.kontoId })) };
         if (g.levAdr) Object.assign(body, { ShippingAddressLine1: g.levAdr, ShippingPostalCode: g.levPnr, ShippingCity: g.levSted });
         const n = await post("/api/biz/orders", body);
-        const info = { env: e, id: n.ID, nr: n.OrderNumber, sum: n.TaxExclusiveAmount, tid: new Date().toISOString(), av: S.bruker?.navn || "" };
-        await lagreOrdre({ ...g.o, unimicro: info });
+        const i0 = { env: e, id: n.ID, nr: n.OrderNumber, sum: n.TaxExclusiveAmount, tid: new Date().toISOString(), av: S.bruker?.navn || "" };
+        await lagreInfo(g.o, i0);
         res.sendt.push({ navn: g.o.kundeNavn, nr: n.OrderNumber, sum: n.TaxExclusiveAmount });
       } catch (err) { res.feil.push(`${g.o.kundeNavn}: ${err.message}`); }
     }
@@ -95,24 +101,37 @@ const Um = (() => {
      (faktura-status 42002 eller høyere, ikke kladd 42001). Koblingen går via fakturalinjenes OrderItemId. */
   async function hentStatus(ordre) {
     if (!(await klar())) return;
-    const e = env(), sendt = ordre.filter(o => o.unimicro && o.unimicro.env === e && o.unimicro.id && (o.status || "ny") !== "fakturert");
+    const sendt = ordre.filter(o => info(o) && info(o).id && (o.status || "ny") !== "fakturert" && !info(o).fakturaNr);
     const res = { fakturert: [], kladd: [], ikkeOverfort: 0, feil: [] };
     for (const o of sendt) {
       try {
-        const u = await get(`/api/biz/orders/${o.unimicro.id}?expand=Items&select=ID,StatusCode`);
+        const u = await get(`/api/biz/orders/${info(o).id}?expand=Items&select=ID,StatusCode`);
         const linje = (u.Items || [])[0];
         if (!linje || u.StatusCode < 41003) { res.ikkeOverfort++; continue; }
         const fl = await get(`/api/biz/invoiceitems?filter=${q("OrderItemId eq " + linje.ID)}&select=ID,CustomerInvoiceID`);
         const invId = fl[0]?.CustomerInvoiceID; if (!invId) { res.ikkeOverfort++; continue; }
         const inv = await get(`/api/biz/invoices/${invId}?select=ID,InvoiceNumber,StatusCode,TaxExclusiveAmount,InvoiceDate`);
         if (inv.StatusCode >= 42002 && inv.InvoiceNumber) {
-          await lagreOrdre({ ...o, status: "fakturert", unimicro: { ...o.unimicro, fakturaId: inv.ID, fakturaNr: inv.InvoiceNumber, fakturaSum: inv.TaxExclusiveAmount, fakturaDato: inv.InvoiceDate } });
+          const ny = { ...info(o), fakturaId: inv.ID, fakturaNr: inv.InvoiceNumber, fakturaSum: inv.TaxExclusiveAmount, fakturaDato: inv.InvoiceDate };
+          if (env() === "test") await lagreInfo(o, ny); else await lagreOrdre({ ...o, status: "fakturert", unimicro: ny });
           res.fakturert.push(`${o.kundeNavn} (faktura ${inv.InvoiceNumber})`);
         } else res.kladd.push(o.kundeNavn);
       } catch (err) { res.feil.push(`${o.kundeNavn}: ${err.message}`); }
     }
     return res;
   }
-  return { loggInn, klar, sendUke, hentStatus, env, envNavn: () => ENV[env()].navn, settEnv: v => { if (ENV[v] && v !== env()) { ss.set("um_env", v); ss.del("um_token"); ss.del("um_company"); } }, innlogget: () => !!token(), selskap: () => ss.get("um_companyName") || "" };
+  /* Rester fra testing før v31: ordre der testkoblingen ble lagret i SharePoint. */
+  const testRester = ordre => ordre.filter(o => o.unimicro && o.unimicro.env === "test");
+  async function fjernTestRester(ordre) {
+    const liste = testRester(ordre);
+    for (const o of liste) {
+      const n = { ...o, unimicro: null };
+      if (o.status === "fakturert" && o.unimicro.fakturaNr) n.status = o.sendtInfo && Object.keys(o.sendtInfo).length ? "sendt" : "ny";
+      await lagreOrdre(n);
+    }
+    return liste.length;
+  }
+  const visKnapper = () => env() === "prod" || ls.get("um_tester") === "1";
+  return { testRester, fjernTestRester, visKnapper, loggInn, klar, sendUke, hentStatus, env, envNavn: () => ENV[env()].navn, settEnv: v => { if (ENV[v] && v !== env()) { ss.set("um_env", v); ss.del("um_token"); ss.del("um_company"); } }, innlogget: () => !!token(), selskap: () => ss.get("um_companyName") || "" };
 })();
 window.Um = Um;

@@ -242,8 +242,9 @@ function visUke(){
     <button class="btn" data-act="kopierForrige" title="Lager ordre for kundene fra forrige uke med samme varer og antall. Kunder som allerede har ordre denne uka, hoppes over.">Kopier forrige uke</button>
     <label class="btn" title="Last opp ukelista fra Word (.docx). Du ser forslaget før noe lagres.">Importer Word-liste<input type="file" id="wordFil" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden></label>
     <button class="btn" data-act="unimicro" ${ordre.length?"":"disabled"} title="Lager en Excel-fil i Unimicros importmal for ordre. Bare ordre som faktureres i Unimicro tas med (ikke ASKO/Dagfinn, Dyrket, interne eller smaksprøver), og ikke ordre med status Fakturert.">Ordre til Unimicro (Excel)</button>
-    <button class="btn" data-act="umSend" ${ordre.length?"":"disabled"} title="Lager ukas ordre direkte i Unimicro via API. Samme utvalg som Excel-fila. Ordre som er sendt fra før, hoppes over.">Send til Unimicro${window.Um&&Um.env()==="test"?" (test)":""}</button>
-    <button class="btn" data-act="umStatus" title="Henter status fra Unimicro og setter ordre som er fakturert der, til Fakturert.">Hent status</button>
+    ${window.Um&&Um.visKnapper()?`<button class="btn" data-act="umSend" ${ordre.length?"":"disabled"} title="${Um.env()==="test"?"Test: lager ukas ordre i Unimicros testselskap. Ingenting lagres i ordreboka.":"Lager ukas ordre direkte i Unimicro via API. Samme utvalg som Excel-fila. Ordre som er sendt fra før, hoppes over."}">Send til Unimicro${Um.env()==="test"?" (test)":""}</button>
+    <button class="btn" data-act="umStatus" title="${Um.env()==="test"?"Test: viser hvilke testordre som er fakturert i testselskapet. Status i ordreboka endres ikke.":"Henter status fra Unimicro og setter ordre som er fakturert der, til Fakturert."}">Hent status${Um.env()==="test"?" (test)":""}</button>`:""}
+    ${window.Um&&Um.testRester(S.ordre).length?`<button class="btn danger ghost" data-act="umRydd" title="Fjerner merkene fra Unimicro-testen og setter status tilbake på ordre som testen satte til Fakturert.">Fjern Unimicro-testdata (${Um.testRester(S.ordre).length})</button>`:""}
     <button class="btn danger ghost" data-act="tomUke" ${ordre.length?"":"disabled"}>${S.confirmTom?`Trykk igjen for å slette ${ordre.length} ordre`:"Tøm uka"}</button>
   </div>
   ${S.kunLes?`<p class="notice"><b>Lesetilgang.</b> Du kan se ukas ordre og ysterilista, men ikke endre noe.</p>`:""}
@@ -338,7 +339,7 @@ function visOrdre(o){
   const under=[o.transport, o.sendes?`sendes ${dmy(o.sendes)}`:"", o.bestnr?`best.nr ${o.bestnr}`:""].filter(Boolean).join(" · ");
   let h=`<article class="card" id="o-${esc(o.id)}">
   <div class="ohead" data-act="toggle" data-id="${esc(o.id)}">
-    <div class="name">${esc(o.kundeNavn||k?.navn||"Ukjent kunde")}<small>${esc(under||"Ingen transport valgt")}${o.kilde==="fast"?" · fast ordre":""}${o.unimicro&&o.unimicro.id?` · <span class="fakt">Unimicro${o.unimicro.env==="test"?" test":""} ordre ${esc(o.unimicro.nr)}${o.unimicro.fakturaNr?`, faktura ${esc(o.unimicro.fakturaNr)}`:""}</span>`:""}${betaler(k)!==k&&ordreFakt(o)==="unimicro"?` · <span class="fakt">faktureres til ${esc(betaler(k).navn)}</span>`:""}${ordreFakt(o)!=="unimicro"?` · <span class="fakt fakt-${esc(ordreFakt(o))}">${ordreFakt(o)==="ikke"?"faktureres ikke":esc(faktNavn(ordreFakt(o)))}</span>`:""}</small></div>
+    <div class="name">${esc(o.kundeNavn||k?.navn||"Ukjent kunde")}<small>${esc(under||"Ingen transport valgt")}${o.kilde==="fast"?" · fast ordre":""}${o.unimicro&&o.unimicro.id&&o.unimicro.env==="prod"?` · <span class="fakt">Unimicro ordre ${esc(o.unimicro.nr)}${o.unimicro.fakturaNr?`, faktura ${esc(o.unimicro.fakturaNr)}`:""}</span>`:""}${betaler(k)!==k&&ordreFakt(o)==="unimicro"?` · <span class="fakt">faktureres til ${esc(betaler(k).navn)}</span>`:""}${ordreFakt(o)!=="unimicro"?` · <span class="fakt fakt-${esc(ordreFakt(o))}">${ordreFakt(o)==="ikke"?"faktureres ikke":esc(faktNavn(ordreFakt(o)))}</span>`:""}</small></div>
     ${!åpen && S.lagret.get(o.id)?.st==="ok" ? lagretTekst(o.id) : !åpen && S.lagret.get(o.id)?.st==="feil" ? lagretTekst(o.id) : ""}
     <span class="hint">${nf(kg,1)} kg</span>
     <span class="pill st-${st}">${esc((STATUS.find(s=>s[0]===st)||[,st])[1])}</span>
@@ -577,6 +578,7 @@ function klikk(e){
   else if(a==="unimicro") lastNedUnimicro();
   else if(a==="umSend") sendTilUnimicro();
   else if(a==="umStatus") statusFraUnimicro();
+  else if(a==="umRydd") Um.fjernTestRester(S.ordre).then(n=>{ toast(`✓ Testdata fjernet fra ${n} ordre.`); render(); }).catch(e=>toast(e.message));
   else if(a==="pakk"){ S.pakk=id; render(); setTimeout(()=>document.getElementById("pakkForm")?.scrollIntoView({block:"nearest",behavior:"smooth"}),30); }
   else if(a==="pakkAvbryt"){ const k=S.pakk; S.pakk=null; render(); if(k) S.utkast.delete("pakkForm|"+k); }
   else if(a==="pakkAngre"){ if(S.confirmAngre===id){ S.confirmAngre=null; angrePakk(id); } else { S.confirmAngre=id; toast("Trykk «Angre sending» igjen for å bekrefte."); setTimeout(()=>{ if(S.confirmAngre===id) S.confirmAngre=null; },4000); } }
@@ -958,7 +960,7 @@ async function sendTilUnimicro(){
   }catch(e){ toast(e.message); } finally { S.umTravel=false; render(); }
 }
 async function statusFraUnimicro(){
-  try{ const r=await Um.hentStatus(S.ordre); if(!r) return; toast(`${r.fakturert.length?`✓ Satt til Fakturert: ${r.fakturert.join(", ")}.`:"Ingen nye fakturaer i Unimicro."}${r.kladd.length?` Fakturakladd, ikke fakturert ennå: ${r.kladd.join(", ")}.`:""}${r.feil.length?` Feil: ${r.feil.join("; ")}`:""}`); }catch(e){ toast(e.message); }
+  try{ const r=await Um.hentStatus(S.ordre); if(!r) return; const test=Um.env()==="test"; toast(`${r.fakturert.length?`✓ ${test?"Fakturert i testselskapet (ordreboka endres ikke)":"Satt til Fakturert"}: ${r.fakturert.join(", ")}.`:"Ingen nye fakturaer i Unimicro."}${r.kladd.length?` Fakturakladd, ikke fakturert ennå: ${r.kladd.join(", ")}.`:""}${r.feil.length?` Feil: ${r.feil.join("; ")}`:""}`); }catch(e){ toast(e.message); }
 }
 function lastNedCSV(){
   const u=uke(); const rader=[["Uke","Kundenr","Kunde","Orgnr","Sendes","Bestillingsnr","Varenr","Vare","Antall","Status"]];
