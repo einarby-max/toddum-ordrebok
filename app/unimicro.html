@@ -48,7 +48,7 @@ const ENV = {
   test: { auth: "https://test-login.unimicro.no", api: "https://test.unimicro.no" },
   prod: { auth: "https://login.unimicro.no", api: "https://app.unimicro.no" }
 };
-const SCOPE_STD = "openid profile AppFramework Sales.Order Sales.Invoice Sales.Admin";
+const SCOPE_STD = "openid profile AppFramework";
 const $ = s => document.querySelector(s), ut = t => $("#ut").textContent = typeof t === "string" ? t : JSON.stringify(t, null, 2);
 const ss = { get: k => { try { return sessionStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { sessionStorage.setItem(k, v); } catch (e) {} }, del: k => { try { sessionStorage.removeItem(k); } catch (e) {} } };
 const redirect = location.origin + location.pathname;
