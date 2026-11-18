@@ -242,6 +242,8 @@ function visUke(){
     <button class="btn" data-act="kopierForrige" title="Lager ordre for kundene fra forrige uke med samme varer og antall. Kunder som allerede har ordre denne uka, hoppes over.">Kopier forrige uke</button>
     <label class="btn" title="Last opp ukelista fra Word (.docx). Du ser forslaget før noe lagres.">Importer Word-liste<input type="file" id="wordFil" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden></label>
     <button class="btn" data-act="unimicro" ${ordre.length?"":"disabled"} title="Lager en Excel-fil i Unimicros importmal for ordre. Bare ordre som faktureres i Unimicro tas med (ikke ASKO/Dagfinn, Dyrket, interne eller smaksprøver), og ikke ordre med status Fakturert.">Ordre til Unimicro (Excel)</button>
+    <button class="btn" data-act="umSend" ${ordre.length?"":"disabled"} title="Lager ukas ordre direkte i Unimicro via API. Samme utvalg som Excel-fila. Ordre som er sendt fra før, hoppes over.">Send til Unimicro${window.Um&&Um.env()==="test"?" (test)":""}</button>
+    <button class="btn" data-act="umStatus" title="Henter status fra Unimicro og setter ordre som er fakturert der, til Fakturert.">Hent status</button>
     <button class="btn danger ghost" data-act="tomUke" ${ordre.length?"":"disabled"}>${S.confirmTom?`Trykk igjen for å slette ${ordre.length} ordre`:"Tøm uka"}</button>
   </div>
   ${S.kunLes?`<p class="notice"><b>Lesetilgang.</b> Du kan se ukas ordre og ysterilista, men ikke endre noe.</p>`:""}
@@ -336,7 +338,7 @@ function visOrdre(o){
   const under=[o.transport, o.sendes?`sendes ${dmy(o.sendes)}`:"", o.bestnr?`best.nr ${o.bestnr}`:""].filter(Boolean).join(" · ");
   let h=`<article class="card" id="o-${esc(o.id)}">
   <div class="ohead" data-act="toggle" data-id="${esc(o.id)}">
-    <div class="name">${esc(o.kundeNavn||k?.navn||"Ukjent kunde")}<small>${esc(under||"Ingen transport valgt")}${o.kilde==="fast"?" · fast ordre":""}${betaler(k)!==k&&ordreFakt(o)==="unimicro"?` · <span class="fakt">faktureres til ${esc(betaler(k).navn)}</span>`:""}${ordreFakt(o)!=="unimicro"?` · <span class="fakt fakt-${esc(ordreFakt(o))}">${ordreFakt(o)==="ikke"?"faktureres ikke":esc(faktNavn(ordreFakt(o)))}</span>`:""}</small></div>
+    <div class="name">${esc(o.kundeNavn||k?.navn||"Ukjent kunde")}<small>${esc(under||"Ingen transport valgt")}${o.kilde==="fast"?" · fast ordre":""}${o.unimicro&&o.unimicro.id?` · <span class="fakt">Unimicro${o.unimicro.env==="test"?" test":""} ordre ${esc(o.unimicro.nr)}</span>`:""}${betaler(k)!==k&&ordreFakt(o)==="unimicro"?` · <span class="fakt">faktureres til ${esc(betaler(k).navn)}</span>`:""}${ordreFakt(o)!=="unimicro"?` · <span class="fakt fakt-${esc(ordreFakt(o))}">${ordreFakt(o)==="ikke"?"faktureres ikke":esc(faktNavn(ordreFakt(o)))}</span>`:""}</small></div>
     ${!åpen && S.lagret.get(o.id)?.st==="ok" ? lagretTekst(o.id) : !åpen && S.lagret.get(o.id)?.st==="feil" ? lagretTekst(o.id) : ""}
     <span class="hint">${nf(kg,1)} kg</span>
     <span class="pill st-${st}">${esc((STATUS.find(s=>s[0]===st)||[,st])[1])}</span>
@@ -573,6 +575,8 @@ function klikk(e){
   else if(a==="slettAlle") slettAlle();
   else if(a==="csv") lastNedCSV();
   else if(a==="unimicro") lastNedUnimicro();
+  else if(a==="umSend") sendTilUnimicro();
+  else if(a==="umStatus") statusFraUnimicro();
   else if(a==="pakk"){ S.pakk=id; render(); setTimeout(()=>document.getElementById("pakkForm")?.scrollIntoView({block:"nearest",behavior:"smooth"}),30); }
   else if(a==="pakkAvbryt"){ const k=S.pakk; S.pakk=null; render(); if(k) S.utkast.delete("pakkForm|"+k); }
   else if(a==="pakkAngre"){ if(S.confirmAngre===id){ S.confirmAngre=null; angrePakk(id); } else { S.confirmAngre=id; toast("Trykk «Angre sending» igjen for å bekrefte."); setTimeout(()=>{ if(S.confirmAngre===id) S.confirmAngre=null; },4000); } }
@@ -904,27 +908,36 @@ function lastSkript(src){ return new Promise((ok,nei)=>{ if(window.XLSX) return 
    Ordrenr lages som siste siffer i året + uke + løpenr (uke 43 i 2026 gir 64301, 64302 …), innenfor Unimicros ordreserie 1–199 999. */
 /* Pris på faktura: butikkens egen kundepris, ellers betalerens (grossistens) kundepris, ellers listepris. */
 function prisFakt(k,v){ const kp=k?.priser?.[v]; if(kp!=null&&kp!=="") return Number(kp); return prisFor(betaler(k),v); }
-async function lastNedUnimicro(){
-  const u=uke();
+/* Felles grunnlag for Excel-fila og sending via API: ukas ordre som faktureres i Unimicro, med betaler, priser og adresse. */
+function fakturaGrunnlag(){
   const kandidater=[...S.ordre].filter(o=>(o.status||"ny")!=="fakturert" && linjerFaktura(o).length);
   const andre=kandidater.filter(o=>ordreFakt(o)!=="unimicro");
   const ordre=kandidater.filter(o=>ordreFakt(o)==="unimicro").sort((a,b)=>(a.kundeNavn||"").localeCompare(b.kundeNavn||"","nb"));
-  if(!ordre.length){ toast(`Ingen ordre skal faktureres i Unimicro denne uka${andre.length?` (${andre.length} faktureres andre steder eller ikke)`:""}.`); return; }
+  if(!ordre.length) return {feil:`Ingen ordre skal faktureres i Unimicro denne uka${andre.length?` (${andre.length} faktureres andre steder eller ikke)`:""}.`, andre};
   const utenNr=ordre.filter(o=>!betaler(kunde(o.kundeId))?.kundenr);
-  if(utenNr.length){ toast(`Mangler Unimicro-kundenummer: ${utenNr.map(o=>o.kundeNavn).join(", ")}. Legg det inn på kunden først.`); return; }
+  if(utenNr.length) return {feil:`Mangler Unimicro-kundenummer: ${utenNr.map(o=>o.kundeNavn).join(", ")}. Legg det inn på kunden først.`, andre};
   const utenPris=new Set(); ordre.forEach(o=>linjerFaktura(o).forEach(l=>{ if(prisFakt(kunde(o.kundeId),l.varenr)===null) utenPris.add(l.p?.kort||l.varenr); }));
-  if(utenPris.size){ toast(`Mangler pris på ${[...utenPris].join(", ")}. Legg inn pris under Produkter.`); return; }
+  if(utenPris.size) return {feil:`Mangler pris på ${[...utenPris].join(", ")}. Legg inn pris under Produkter.`, andre};
+  const grunnlag=ordre.map(o=>{
+    const k=kunde(o.kundeId), b=betaler(k), via=b!==k;
+    let adr=k.adresse||"", pnr=k.postnr||"", sted=k.poststed||"";
+    if(k.levAdresse){ const l=k.levAdresse.split(/\n|,/).map(x=>x.trim()).filter(Boolean); const m=(l[l.length-1]||"").match(/^(\d{4})\s+(.+)$/); if(m){ pnr=m[1]; sted=m[2]; adr=l.slice(0,-1).join(", "); } else adr=l.join(", "); }
+    return { o, k, b, via, levDato:o.sendes||o.prodDato||iDag(), varRef:AVSENDER.ref, deresRef:via?k.navn:(k.kontakt||""), rekv:o.bestnr||(via?k.navn:""), levAdr:adr, levPnr:pnr, levSted:sted,
+      linjer:linjerFaktura(o).map(l=>({varenr:l.varenr, navn:l.p?.navn||l.p?.kort||l.varenr, antall:l.antall, pris:prisFakt(k,l.varenr), p:l.p})) };
+  });
+  return {grunnlag, andre};
+}
+function ikkeMedTekst(andre){ const grupper={}; andre.forEach(o=>{ const f=ordreFakt(o); (grupper[f]=grupper[f]||[]).push(o.kundeNavn); }); return Object.entries(grupper).map(([f,n])=>`${f==="ikke"?"Faktureres ikke":faktNavn(f)}: ${n.join(", ")}`).join(". "); }
+async function lastNedUnimicro(){
+  const u=uke(); const fg=fakturaGrunnlag(); if(fg.feil){ toast(fg.feil); return; }
   try { await lastSkript("vendor/xlsx.mini.min.js"); } catch(e){ toast("Klarte ikke å laste Excel-modulen. Sjekk nettforbindelsen."); return; }
   const H=["Ordrenr","Ordredato","Leveringsdato","Kundenr","Kundenavn","Vår referanse","Deres referanse","Hovedselger","Rekvisisjon","Leveringsadr.","Lev.postnr.","Lev.poststed","Varenr.","Varenavn","Antall","Pris eks. mva","Rabatt %","Prosjekt","Avdeling"];
   /* Unimicro krever datoformat ddMMyy, f.eks. 241026 */
   const ddmmyy=iso=>{ if(!iso) return ""; const [y,m,d]=iso.split("-"); return d+m+y.slice(2); };
   const idag=ddmmyy(iDag()); const rader=[H];
-  ordre.forEach((o,i)=>{
-    const k=kunde(o.kundeId); const nr=String((u.y%10)*10000+u.w*100+i+1);   /* f.eks. 64301 = 2026 uke 43 nr. 1. Unimicros ordreserie går til 199 999. */
-    let adr=k.adresse||"", pnr=k.postnr||"", sted=k.poststed||"";
-    if(k.levAdresse){ const l=k.levAdresse.split(/\n|,/).map(x=>x.trim()).filter(Boolean); const m=(l[l.length-1]||"").match(/^(\d{4})\s+(.+)$/); if(m){ pnr=m[1]; sted=m[2]; adr=l.slice(0,-1).join(", "); } else adr=l.join(", "); }
-    const b=betaler(k), via=b!==k;
-    linjerFaktura(o).forEach(l=>rader.push([nr, idag, ddmmyy(o.sendes||o.prodDato||iDag()), Number(b.kundenr), b.navn, AVSENDER.ref, via?k.navn:(k.kontakt||""), "", o.bestnr||(via?k.navn:""), via&&!k.levAdresse&&!k.adresse?"":adr, pnr, sted, l.varenr, l.p?.navn||l.p?.kort||l.varenr, l.antall, prisFakt(k,l.varenr), "", "", ""]));
+  fg.grunnlag.forEach((g,i)=>{
+    const nr=String((u.y%10)*10000+u.w*100+i+1);   /* f.eks. 64301 = 2026 uke 43 nr. 1. Unimicros ordreserie går til 199 999. */
+    g.linjer.forEach(l=>rader.push([nr, idag, ddmmyy(g.levDato), Number(g.b.kundenr), g.b.navn, g.varRef, g.deresRef, "", g.rekv, g.via&&!g.k.levAdresse&&!g.k.adresse?"":g.levAdr, g.levPnr, g.levSted, l.varenr, l.navn, l.antall, l.pris, "", "", ""]));
   });
   const ws=XLSX.utils.aoa_to_sheet(rader);
   for(let r=1;r<rader.length;r++){ for(const c of [0,1,2,12]){ const ref=XLSX.utils.encode_cell({r,c}); if(ws[ref]){ ws[ref].t="s"; ws[ref].v=String(ws[ref].v); ws[ref].z="@"; } } }
@@ -932,9 +945,20 @@ async function lastNedUnimicro(){
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Data");
   const data=XLSX.write(wb,{bookType:"xlsx",type:"array"});
   lagre(`Unimicro ordre uke ${u.w}.xlsx`, new Blob([data],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}));
-  const grupper={}; andre.forEach(o=>{ const f=ordreFakt(o); (grupper[f]=grupper[f]||[]).push(o.kundeNavn); });
-  const ikkeMed=Object.entries(grupper).map(([f,n])=>`${f==="ikke"?"Faktureres ikke":faktNavn(f)}: ${n.join(", ")}`).join(". ");
-  toast(`${ordre.length} ordre med ${rader.length-1} linjer er lagt i fila. Importer den i Unimicro.${ikkeMed?` Ikke med – ${ikkeMed}.`:""}`);
+  const ikkeMed=ikkeMedTekst(fg.andre);
+  toast(`${fg.grunnlag.length} ordre med ${rader.length-1} linjer er lagt i fila. Importer den i Unimicro.${ikkeMed?` Ikke med – ${ikkeMed}.`:""}`);
+}
+async function sendTilUnimicro(){
+  const fg=fakturaGrunnlag(); if(fg.feil){ toast(fg.feil); return; }
+  if(S.umTravel) return; S.umTravel=true; toast(`Sender ordre til Unimicro (${Um.envNavn()}) …`);
+  try{
+    const r=await Um.sendUke(fg.grunnlag); if(!r) return;
+    const sum=r.sendt.reduce((a,x)=>a+(Number(x.sum)||0),0);
+    toast(`${r.sendt.length?`✓ ${r.sendt.length} ordre er laget i Unimicro (${Um.envNavn()}), ${nf(sum,2)} kr eks. mva.`:"Ingen nye ordre å sende."}${r.hoppet?` ${r.hoppet} var sendt fra før.`:""}${r.feil.length?` Feil: ${r.feil.join("; ")}`:""}`);
+  }catch(e){ toast(e.message); } finally { S.umTravel=false; render(); }
+}
+async function statusFraUnimicro(){
+  try{ const r=await Um.hentStatus(S.ordre); if(!r) return; toast(`${r.fakturert.length?`✓ Satt til Fakturert: ${r.fakturert.join(", ")}.`:"Ingen nye fakturaer i Unimicro."}${r.feil.length?` Feil: ${r.feil.join("; ")}`:""}`); }catch(e){ toast(e.message); }
 }
 function lastNedCSV(){
   const u=uke(); const rader=[["Uke","Kundenr","Kunde","Orgnr","Sendes","Bestillingsnr","Varenr","Vare","Antall","Status"]];

@@ -31,7 +31,7 @@ const Store = (() => {
     innst: { navn: "Ordrebok Innstillinger", nokkel: "id", valgfri: true, kol: [ ["data",J] ] },
     ordre: { navn: "Ordrebok Ordre", nokkel: "id", kol: [
       ["uke",T,{indexed:true}],["kundeId",T],["kundeNavn",T],["linjer",J],["transport",T],["sendes",T],["prodDato",T],["bestnr",T],
-      ["merknad",M],["status",T],["kilde",T],["opprettet",T],["endret",T],["fakturering",T,{ny:true}],["sendtInfo",J,{ny:true}] ] },
+      ["merknad",M],["status",T],["kilde",T],["opprettet",T],["endret",T],["fakturering",T,{ny:true}],["sendtInfo",J,{ny:true}],["unimicro",J,{ny:true}] ] },
   };
   const SCOPES = ["Sites.Manage.All"];
   let app, konto, siteId;

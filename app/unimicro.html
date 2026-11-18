@@ -84,6 +84,7 @@ async function callback() {
   ss.del("um_verifier"); ss.del("um_state");
   if (!r.ok || !j.access_token) { ut({ feil: "Fikk ikke token", status: r.status, svar: j }); return; }
   ss.set("um_token", j.access_token); ss.set("um_exp", String(Date.now() + (j.expires_in || 3600) * 1000));
+  const tilbake = ss.get("um_return"); if (tilbake) { ss.del("um_return"); location.replace(tilbake); throw new Error("videresender"); }
 }
 const token = () => { const t = ss.get("um_token"), e = Number(ss.get("um_exp") || 0); return t && e > Date.now() ? t : null; };
 function visStatus() { const t = token(); $("#status").innerHTML = t ? `<span class="ok">✓ Logget inn (${esc($("#env").selectedOptions[0].text)})</span>` : "Ikke logget inn"; }
